@@ -225,7 +225,7 @@ if check_password():
             with col3:
                 discount = st.number_input("⚡ Discount / Qiimo-dhimis ($)", min_value=0.00, step=0.01, value=0.00)
             with col4:
-                status = st.selectbox("Status / Nooca Bixinta", ["Completed", "Pending"])
+                status = st.selectbox("Status / Nooca Bixinta", ["Cash", "Invoice"])
                 
             submitted = st.form_submit_button("💾 Save Sale Record", use_container_width=True)
 
