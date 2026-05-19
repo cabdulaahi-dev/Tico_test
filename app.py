@@ -1,4 +1,4 @@
-import streamlit as st
+s st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -1067,30 +1067,4 @@ def main():
             
             with col2:
                 profit_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
-                avg_profit = total_profit / len(filtered_sales) if len(filtered_sales) > 0 else 0
-                
-                st.markdown(f"""
-                    **Profit Margin:** {profit_margin:.2f}%  
-                    **Avg Profit/Sale:** ${avg_profit:,.2f}  
-                    **Total Sales:** {len(filtered_sales)}
-                """)
-            
-            with col3:
-                total_items = filtered_sales["Quantity"].sum()
-                avg_items_per_sale = total_items / len(filtered_sales) if len(filtered_sales) > 0 else 0
-                
-                st.markdown(f"""
-                    **Total Items Sold:** {int(total_items):,}  
-                    **Avg Items/Sale:** {avg_items_per_sale:.2f}  
-                    **Unique Customers:** {filtered_sales['Customer_Name'].nunique()}
-                """)
-        else:
-            st.info("No data available for analysis")
-
-# ============================================================================
-# RUN APPLICATION
-# ============================================================================
-
-if __name__ == "__main__":
-    if check_password():
-        main()
+                avg_profit = total_profit / len(filtered_sales) if len(filtered_sales)
