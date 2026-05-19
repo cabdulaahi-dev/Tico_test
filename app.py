@@ -18,6 +18,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Initialize session state for authentication and role tracking
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "role" not in st.session_state:
+    st.session_state.role = None  # "admin" or "viewer"
+if "username" not in st.session_state:
+    st.session_state.username = None
+
 # Custom CSS for Professional Styling
 st.markdown("""
     <style>
@@ -221,6 +229,26 @@ st.markdown("""
             border-radius: 8px !important;
         }
         
+        /* Role Badge */
+        .role-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-left: 1rem;
+        }
+        
+        .role-admin {
+            background-color: #d62728;
+            color: white;
+        }
+        
+        .role-viewer {
+            background-color: #ff7f0e;
+            color: white;
+        }
+        
         /* Loading Animation */
         @keyframes fadeIn {
             from {
@@ -240,11 +268,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# AUTHENTICATION SYSTEM
+# AUTHENTICATION SYSTEM - TWO-TIER ACCESS CONTROL
 # ============================================================================
 
 def check_password():
-    """Check if user is authenticated"""
+    """Check if user is authenticated and assign role based on password"""
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     
@@ -262,20 +290,39 @@ def check_password():
         
         with col2:
             st.markdown("### 🔐 Authentication Required")
+            st.markdown("""
+            **Available Accounts:**
+            - **Admin**: Full access to all features
+            - **Manager/Viewer**: Read-only access (Dashboard & Analytics only)
+            """)
+            
             password = st.text_input(
                 "Enter Password",
                 type="password",
                 key="password_input",
-                placeholder="Tico2026"
+                placeholder="Enter your password"
             )
             
             if st.button("Unlock Access", use_container_width=True):
-                if password == "Tico2026":
+                # Admin password - Full access
+                if password == "Tico000123":
                     st.session_state.authenticated = True
-                    st.success("✓ Authentication successful! Redirecting...")
+                    st.session_state.role = "admin"
+                    st.session_state.username = "Administrator"
+                    st.success("✓ Admin access granted! Redirecting...")
                     st.rerun()
+                
+                # Manager/Viewer password - Read-only access
+                elif password == "Tico000":
+                    st.session_state.authenticated = True
+                    st.session_state.role = "viewer"
+                    st.session_state.username = "Manager"
+                    st.success("✓ Manager access granted! (Read-only mode)")
+                    st.rerun()
+                
                 else:
-                    st.error("❌ Invalid password. Try again.")
+                    st.error("❌ Invalid password. Please try again.")
+                    st.info("💡 Tip: Make sure you have the correct password for your account level.")
         
         return False
     
@@ -500,16 +547,25 @@ def render_metric_card(label, value, delta=None, delta_color="neutral"):
     """, unsafe_allow_html=True)
 
 def render_header():
-    """Render page header"""
-    col1, col2 = st.columns([3, 1])
+    """Render page header with role indicator"""
+    col1, col2, col3 = st.columns([2, 1.5, 1.5])
     
     with col1:
         st.markdown("# 📊 TICO Wholesale Core")
         st.markdown("Advanced Sales & Profit Analytics Platform")
     
     with col2:
+        # Display current role
+        if st.session_state.role == "admin":
+            st.markdown('<span class="role-badge role-admin">👤 ADMIN - Full Access</span>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span class="role-badge role-viewer">👁️ VIEWER - Read-Only</span>', unsafe_allow_html=True)
+    
+    with col3:
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.authenticated = False
+            st.session_state.role = None
+            st.session_state.username = None
             st.rerun()
 
 # ============================================================================
@@ -543,11 +599,25 @@ def main():
         st.divider()
         
         st.markdown("### 📑 Navigation")
-        nav_choice = st.radio(
-            "Select Section:",
-            options=["Dashboard", "Sales Entry", "Payment Entry", "Analytics"],
-            label_visibility="collapsed"
-        )
+        
+        # Build navigation menu based on user role
+        if st.session_state.role == "admin":
+            # Admin: Full access to all sections
+            nav_options = ["Dashboard", "Sales Entry", "Payment Entry", "Analytics"]
+            nav_choice = st.radio(
+                "Select Section:",
+                options=nav_options,
+                label_visibility="collapsed"
+            )
+        else:  # viewer role
+            # Viewer: Read-only access to Dashboard and Analytics only
+            st.info("📖 **Read-Only Mode**\n\nYou have access to:\n- Dashboard\n- Analytics only")
+            nav_options = ["Dashboard", "Analytics"]
+            nav_choice = st.radio(
+                "Select Section:",
+                options=nav_options,
+                label_visibility="collapsed"
+            )
     
     # Filter sales data
     filtered_sales = AnalyticsEngine.get_filtered_sales(sales_df, time_filter)
@@ -698,10 +768,15 @@ def main():
             st.info("No sales recorded for this period")
     
     # ========================================================================
-    # SALES ENTRY TAB
+    # SALES ENTRY TAB - ADMIN ONLY
     # ========================================================================
     
     elif nav_choice == "Sales Entry":
+        if st.session_state.role != "admin":
+            st.error("❌ Access Denied")
+            st.warning("This section is only available to administrators. You have read-only access.")
+            return
+        
         st.markdown("## 📝 Sales Entry Form")
         st.markdown("Add a new sale transaction")
         
@@ -800,10 +875,15 @@ def main():
             st.info("No sales records yet")
     
     # ========================================================================
-    # PAYMENT ENTRY TAB
+    # PAYMENT ENTRY TAB - ADMIN ONLY
     # ========================================================================
     
     elif nav_choice == "Payment Entry":
+        if st.session_state.role != "admin":
+            st.error("❌ Access Denied")
+            st.warning("This section is only available to administrators. You have read-only access.")
+            return
+        
         st.markdown("## 💳 Payment Entry Form")
         st.markdown("Record customer payments")
         
@@ -881,7 +961,7 @@ def main():
             st.info("No payment records yet")
     
     # ========================================================================
-    # ANALYTICS TAB
+    # ANALYTICS TAB - AVAILABLE TO ALL
     # ========================================================================
     
     elif nav_choice == "Analytics":
