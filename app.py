@@ -1,4 +1,4 @@
-ort streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -585,7 +585,7 @@ def main():
     st.divider()
     
     # ========================================================================
-    # SIDEBAR - TIME FILTER & NAVIGATION
+    # SIDEBAR - TIME FILTER & NAVIGATION (INCLUDING ADMIN BACKUP)
     # ========================================================================
     
     with st.sidebar:
@@ -608,6 +608,39 @@ def main():
                 options=nav_options,
                 label_visibility="collapsed"
             )
+            
+            # ----------------------------------------------------------------
+            # SYSTEM BACKUP BUTTONS - EMBEDDED DIRECTLY IN THE SIDEBAR NAV
+            # ----------------------------------------------------------------
+            st.divider()
+            st.markdown("### 🛠️ Database Backup")
+            
+            if not sales_df.empty:
+                sales_csv = sales_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Sales (CSV)",
+                    data=sales_csv,
+                    file_name=f"Backup_Sales_DB_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="sidebar_dl_sales"
+                )
+            else:
+                st.caption("Sales database is empty.")
+                
+            if not payments_df.empty:
+                payments_csv = payments_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Payments (CSV)",
+                    data=payments_csv,
+                    file_name=f"Backup_Payments_DB_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="sidebar_dl_payments"
+                )
+            else:
+                st.caption("Payments database is empty.")
+                
         else:  # viewer role
             st.info("📖 **Read-Only Mode**\n\nYou have access to:\n- Dashboard\n- Analytics only")
             nav_options = ["Dashboard", "Analytics"]
@@ -959,50 +992,13 @@ def main():
             st.info("No payment records yet")
     
     # ========================================================================
-    # ANALYTICS TAB - AVAILABLE TO ALL (DOWNLOAD ONLY FOR ADMIN)
+    # ANALYTICS TAB - AVAILABLE TO ALL
     # ========================================================================
     
     elif nav_choice == "Analytics":
         st.markdown("## 📊 Advanced Analytics")
         st.markdown(f"Analyzing data for: **{time_filter}**")
         
-        # ====================================================================
-        # SYSTEM BACKUP BUTTONS - PLACED DIRECTLY IN ANALYTICS TOP (ADMIN ONLY)
-        # ====================================================================
-        if st.session_state.role == "admin":
-            st.markdown("### 🛠️ System Database Backup")
-            st.info("Xisaabiye: Halkan waxaad si toos ah uga soo degsan kartaa dhammaan xogta feylasha CSV-ga ah si aad computer-kaaga ugu kaydsato (Backup).")
-            
-            dl_col1, dl_col2 = st.columns(2)
-            with dl_col1:
-                if not sales_df.empty:
-                    sales_csv = sales_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download ALL Sales Data (CSV)",
-                        data=sales_csv,
-                        file_name=f"Backup_Sales_DB_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime="text/csv",
-                        use_container_width=True,
-                        key="analytics_dl_sales"
-                    )
-                else:
-                    st.warning("Sales database is empty.")
-            
-            with dl_col2:
-                if not payments_df.empty:
-                    payments_csv = payments_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download ALL Payments Data (CSV)",
-                        data=payments_csv,
-                        file_name=f"Backup_Payments_DB_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime="text/csv",
-                        use_container_width=True,
-                        key="analytics_dl_payments"
-                    )
-                else:
-                    st.warning("Payments database is empty.")
-            st.divider()
-
         col1, col2 = st.columns(2)
         
         with col1:
