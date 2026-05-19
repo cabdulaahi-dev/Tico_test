@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Initialize session state
+# Initialize session state for Authentication & Persistent Data Backup
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "role" not in st.session_state:
@@ -93,7 +93,7 @@ def check_password():
     return True
 
 # ============================================================================
-# DATABASE MANAGEMENT
+# DATABASE MANAGEMENT (WITH SESSION CACHE TO PREVENT REBOOT LOSS)
 # ============================================================================
 SALES_DB = "tico_sales_only_db.csv"
 PAYMENTS_DB = "tico_payments_db.csv"
@@ -101,40 +101,36 @@ PAYMENTS_DB = "tico_payments_db.csv"
 SALES_COLS = ["Date", "Customer_Name", "Item_Name", "Quantity", "Price", "Cost_Price", "Discount", "Total", "Status"]
 PAYMENTS_COLS = ["Date", "Customer_Name", "Amount_Paid", "Received_By"]
 
-def ensure_db():
-    if not os.path.exists(SALES_DB):
-        pd.DataFrame(columns=SALES_COLS).to_csv(SALES_DB, index=False)
-    if not os.path.exists(PAYMENTS_DB):
-        pd.DataFrame(columns=PAYMENTS_COLS).to_csv(PAYMENTS_DB, index=False)
+if "sales_data" not in st.session_state:
+    if os.path.exists(SALES_DB):
+        try:
+            df = pd.read_csv(SALES_DB)
+            if "Discount" not in df.columns: df["Discount"] = 0.0
+            st.session_state.sales_data = df
+        except: st.session_state.sales_data = pd.DataFrame(columns=SALES_COLS)
+    else: st.session_state.sales_data = pd.DataFrame(columns=SALES_COLS)
 
-ensure_db()
+if "payments_data" not in st.session_state:
+    if os.path.exists(PAYMENTS_DB):
+        try: st.session_state.payments_data = pd.read_csv(PAYMENTS_DB)
+        except: st.session_state.payments_data = pd.DataFrame(columns=PAYMENTS_COLS)
+    else: st.session_state.payments_data = pd.DataFrame(columns=PAYMENTS_COLS)
 
-def load_sales():
-    try:
-        df = pd.read_csv(SALES_DB)
-        if "Discount" not in df.columns:
-            df["Discount"] = 0.0
-        if not df.empty and "Date" in df.columns:
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        return df
-    except Exception:
-        return pd.DataFrame(columns=SALES_COLS)
-
-def load_payments():
-    try:
-        df = pd.read_csv(PAYMENTS_DB)
-        if not df.empty and "Date" in df.columns:
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        return df
-    except Exception:
-        return pd.DataFrame(columns=PAYMENTS_COLS)
+def save_all_dbs():
+    st.session_state.sales_data.to_csv(SALES_DB, index=False)
+    st.session_state.payments_data.to_csv(PAYMENTS_DB, index=False)
 
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
 if check_password():
-    sales_df = load_sales()
-    payments_df = load_payments()
+    sales_df = st.session_state.sales_data.copy()
+    payments_df = st.session_state.payments_data.copy()
+    
+    if not sales_df.empty and "Date" in sales_df.columns:
+        sales_df["Date"] = pd.to_datetime(sales_df["Date"], errors="coerce")
+    if not payments_df.empty and "Date" in payments_df.columns:
+        payments_df["Date"] = pd.to_datetime(payments_df["Date"], errors="coerce")
 
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1: st.markdown("# 📊 TICO Wholesale")
@@ -205,7 +201,7 @@ if check_password():
         else: st.warning("Wax xog ah ma jirto mudadan loo doortay.")
 
     # ------------------------------------------------------------------------
-    # PAGE: SALES ENTRY (WITH DISCOUNT)
+    # PAGE: SALES ENTRY
     # ------------------------------------------------------------------------
     elif menu == "Sales Entry":
         st.markdown("## 📝 Record New Sale")
@@ -225,7 +221,7 @@ if check_password():
             with col3:
                 discount = st.number_input("⚡ Discount / Qiimo-dhimis ($)", min_value=0.00, step=0.01, value=0.00)
             with col4:
-                status = st.selectbox("Status / Nooca Bixinta", ["Cash", "Invoice"])
+                status = st.selectbox("Payment Status / Nooca Bixinta", ["Cash", "Invoice"])
                 
             submitted = st.form_submit_button("💾 Save Sale Record", use_container_width=True)
 
@@ -239,11 +235,12 @@ if check_password():
                 else:
                     tot = sub_total - discount
                     new_sale = pd.DataFrame([{
-                        "Date": pd.to_datetime(s_date), "Customer_Name": c_name.strip(), "Item_Name": i_name.strip(),
+                        "Date": str(s_date), "Customer_Name": c_name.strip(), "Item_Name": i_name.strip(),
                         "Quantity": qty, "Price": price, "Cost_Price": c_price, "Discount": discount, "Total": tot, "Status": status
                     }])
-                    pd.concat([sales_df, new_sale], ignore_index=True).to_csv(SALES_DB, index=False)
-                    st.success(f"✅ La kaydiyey! Subtotal: ${sub_total:,.2f} | Discount: ${discount:,.2f} | Total: ${tot:,.2f}")
+                    st.session_state.sales_data = pd.concat([st.session_state.sales_data, new_sale], ignore_index=True)
+                    save_all_dbs()
+                    st.success(f"✅ La kaydiyey! Qaabka: {status} | Total: ${tot:,.2f}")
                     st.rerun()
 
     # ------------------------------------------------------------------------
@@ -263,38 +260,34 @@ if check_password():
                 st.error("Fadlan geli magaca macaamilka iyo qofka gudaasay!")
             else:
                 new_payment = pd.DataFrame([{
-                    "Date": pd.to_datetime(p_date), "Customer_Name": c_name.strip(), "Amount_Paid": amt, "Received_By": rcv.strip()
+                    "Date": str(p_date), "Customer_Name": c_name.strip(), "Amount_Paid": amt, "Received_By": rcv.strip()
                 }])
-                pd.concat([payments_df, new_payment], ignore_index=True).to_csv(PAYMENTS_DB, index=False)
+                st.session_state.payments_data = pd.concat([st.session_state.payments_data, new_payment], ignore_index=True)
+                save_all_dbs()
                 st.success("✅ Payment-gii si sax ah ayaa loo qoray!")
                 st.rerun()
 
     # ------------------------------------------------------------------------
-    # PAGE: DATA MANAGEMENT (EDIT & DELETE INDIVIDUAL ITEMS)
+    # PAGE: DATA MANAGEMENT
     # ------------------------------------------------------------------------
     elif menu == "Data Management":
         st.markdown("## ⚙️ Advanced Data Management (Edit, Delete, Discount)")
         
-        if sales_df.empty:
+        if st.session_state.sales_data.empty:
             st.info("Hadda wax xog ah kuma jiraan Database-ka.")
         else:
             st.markdown("### Select a Transaction row to Edit or Delete:")
-            # Display dataframe with selection enabled
-            sales_df_display = sales_df.copy()
-            sales_df_display['Index'] = sales_df_display.index
+            sales_df_display = st.session_state.sales_data.copy()
             
             selected_row = st.selectbox(
-                "Dooro safka aad rabto inaad wax ka bedesho ama tirtirto (Macaamil - Badeeco - Taariikh):", 
+                "Dooro safka aad rabto inaad wax ka bedesho ama tirtirto:", 
                 options=sales_df_display.index,
-                format_func=lambda x: f"Safka {x}: {sales_df_display.loc[x, 'Customer_Name']} - {sales_df_display.loc[x, 'Item_Name']} - {str(sales_df_display.loc[x, 'Date'])[:10]}"
+                format_func=lambda x: f"Safka {x}: {sales_df_display.loc[x, 'Customer_Name']} - {sales_df_display.loc[x, 'Item_Name']} [{sales_df_display.loc[x, 'Status']}]"
             )
             
-            # Load the selected row data into fields
-            row_data = sales_df.loc[selected_row]
+            row_data = st.session_state.sales_data.loc[selected_row]
             
             st.markdown("---")
-            st.markdown(f"### 🛠️ Action Center for Row {selected_row}")
-            
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("#### ✏️ Update / Edit Item details")
@@ -302,36 +295,36 @@ if check_password():
                 edit_price = st.number_input("Wholesale Price ($)", min_value=0.00, step=0.01, value=float(row_data["Price"]), key="e_prc")
                 edit_cost = st.number_input("Cost Price ($)", min_value=0.00, step=0.01, value=float(row_data["Cost_Price"]), key="e_cst")
                 edit_disc = st.number_input("Discount ($)", min_value=0.00, step=0.01, value=float(row_data["Discount"]), key="e_dsc")
-                edit_status = st.selectbox("Status", ["Completed", "Pending"], index=["Completed", "Pending"].index(row_data["Status"]), key="e_sts")
+                
+                current_status = row_data["Status"] if row_data["Status"] in ["Cash", "Invoice"] else "Cash"
+                edit_status = st.selectbox("Status", ["Cash", "Invoice"], index=["Cash", "Invoice"].index(current_status), key="e_sts")
                 
                 if st.button("🔄 Save Changes (Wax ka bedel)", use_container_width=True):
                     sub_tot = edit_qty * edit_price
                     new_tot = sub_tot - edit_disc
                     
-                    sales_df.loc[selected_row, "Quantity"] = edit_qty
-                    sales_df.loc[selected_row, "Price"] = edit_price
-                    sales_df.loc[selected_row, "Cost_Price"] = edit_cost
-                    sales_df.loc[selected_row, "Discount"] = edit_disc
-                    sales_df.loc[selected_row, "Total"] = new_tot
-                    sales_df.loc[selected_row, "Status"] = edit_status
+                    st.session_state.sales_data.loc[selected_row, "Quantity"] = edit_qty
+                    st.session_state.sales_data.loc[selected_row, "Price"] = edit_price
+                    st.session_state.sales_data.loc[selected_row, "Cost_Price"] = edit_cost
+                    st.session_state.sales_data.loc[selected_row, "Discount"] = edit_disc
+                    st.session_state.sales_data.loc[selected_row, "Total"] = new_tot
+                    st.session_state.sales_data.loc[selected_row, "Status"] = edit_status
                     
-                    sales_df.to_csv(SALES_DB, index=False)
+                    save_all_dbs()
                     st.success("✓ Xogtii si guul leh ayaa loo bedelay!")
                     st.rerun()
                     
             with col2:
                 st.markdown("#### ❌ Safe Delete Action")
-                st.warning(f"Ogow: Haddi aad badhanka hoose riixdo, waxaad nidaamka ka saaraysaa oo kaliya iibka bixiyey: **{row_data['Customer_Name']}** oo iibsaday **{row_data['Item_Name']}**.")
-                
+                st.warning(f"Ogow: Haddi aad badhanka riixdo, waxaad tirtiraysaa safkan.")
                 confirm_delete = st.checkbox("Haa, waxaan xaqiijinayaa inaan safkan kaliya tirtiro")
                 if st.button("🗑️ Delete Selected Row (Iska saar safkan)", use_container_width=True):
                     if confirm_delete:
-                        sales_df = sales_df.drop(selected_row).reset_index(drop=True)
-                        sales_df.to_csv(SALES_DB, index=False)
-                        st.success("✓ Safkii aad dooratay waa la tirtiray!")
+                        st.session_state.sales_data = st.session_state.sales_data.drop(selected_row).reset_index(drop=True)
+                        save_all_dbs()
+                        st.success("✓ Safkii waa la tirtiray!")
                         st.rerun()
-                    else:
-                        st.error("Fadlan marka hore check-box-ka xaqiijinta guji si aad u tirtirto!")
+                    else: st.error("Fadlan guji check-box-ka xaqiijinta!")
 
     # ------------------------------------------------------------------------
     # PAGE: ANALYTICS
@@ -348,15 +341,4 @@ if check_password():
             with col1: st.metric("💰 Net Revenue", f"${rev:,.2f}")
             with col2: st.metric("📊 Total Profit", f"${prof:,.2f}")
             with col3: st.metric("📈 Profit Margin", f"{margin:.1f}%")
-
-            st.divider()
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("### 🏆 Top Customers by Spend")
-                cust = filtered_sales.groupby("Customer_Name")["Total"].sum().reset_index().sort_values("Total", ascending=False)
-                st.dataframe(cust, use_container_width=True, hide_index=True)
-            with col2:
-                st.markdown("### 📦 Top Products by Revenue")
-                items_g = filtered_sales.groupby("Item_Name")["Total"].sum().reset_index().sort_values("Total", ascending=False)
-                st.dataframe(items_g, use_container_width=True, hide_index=True)
         else: st.info("Xog xisaabeed diyaar ah ma jirto hadda.")
