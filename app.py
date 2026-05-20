@@ -127,7 +127,7 @@ if check_password():
         else:
             menu = st.radio("Menu:", ["Dashboard", "Customer History"])
 
-    # Sifeynta waqtiga ee xogta (Time Filtering)
+    # Sifeynta waqtiga ee xogta
     filtered_sales = sales_df.copy()
     if not sales_df.empty:
         current_date = datetime.now().date()
@@ -146,14 +146,11 @@ if check_password():
         st.markdown(f"## 🏠 Analytics Dashboard ({time_filter})")
         
         if not filtered_sales.empty:
-            # Xisaabinta guud ee Maaliyadda
             rev = filtered_sales["total"].sum()
             cost = (filtered_sales["quantity"] * filtered_sales["cost_price"]).sum()
             prof = rev - cost
             items_sold = filtered_sales["quantity"].sum()
 
-            # --- DEEP ANALYTICS ENGINE (Badeecadaha ugu iibka badan/hooseeya) ---
-            # Group gareey xogta badeecad kasta si loo helo xaddiga (Quantity) iyo Faa'iidada (Profit)
             filtered_sales["item_profit"] = filtered_sales["total"] - (filtered_sales["quantity"] * filtered_sales["cost_price"])
             item_summary = filtered_sales.groupby("item_name").agg(
                 Total_Qty=("quantity", "sum"),
@@ -169,21 +166,19 @@ if check_password():
             rev, cost, prof, items_sold = 0.0, 0.0, 0.0, 0
             top_item, lowest_item = "Ma jirto", "Ma jirto"
 
-        # Muujinta Metrics-ka sare
         col1, col2, col3, col4 = st.columns(4)
         with col1: st.metric("💰 Total Revenue", f"${rev:,.2f}")
         with col2: st.metric("📊 Net Profit (Faa'iido)", f"${prof:,.2f}")
-        with col3: st.metric("📦 Top Selling Item (Ugu iibka badan)", top_item)
+        with col3: st.metric("📦 Top Selling Item", top_item)
         with col4: st.metric("📉 Lowest Selling Item", lowest_item)
 
         st.divider()
-        st.markdown("### 📋 Liiska Iibka ee Shaxda (Item Profit Breakdowns)")
+        st.markdown("### 📋 Liiska Iibka (Item Profit Breakdowns)")
         if not filtered_sales.empty:
             disp_df = filtered_sales.copy()
             disp_df["date"] = disp_df["date"].dt.strftime("%Y-%m-%d")
             disp_df["profit_per_item"] = disp_df["total"] - (disp_df["quantity"] * disp_df["cost_price"])
             
-            # Dib u habayn tiirarka si ay u qurux weynaadaan
             show_cols = ["id", "date", "customer_name", "item_name", "quantity", "price", "discount", "total", "profit_per_item", "status"]
             st.dataframe(disp_df[show_cols].sort_values("id", ascending=False), use_container_width=True, hide_index=True)
         else:
@@ -210,8 +205,167 @@ if check_password():
         discount = st.number_input("⚡ Discount ($)", min_value=0.00, value=0.00)
         
         if st.button("➕ Add Item to List", use_container_width=True):
-            if not i_name.strip(): st.error("Geli magaca badeecada!")
+            if not i_name.strip(): 
+                st.error("Geli magaca badeecada!")
             else:
                 tot = (qty * price) - discount
-                st.session_state.current_items.append({
-                    "item_name": i_name.
+                new_item = {
+                    "item_name": i_name.strip(),
+                    "quantity": qty,
+                    "price": price,
+                    "cost_price": c_price,
+                    "discount": discount,
+                    "total": tot
+                }
+                st.session_state.current_items.append(new_item)
+                st.success(f"✓ {i_name} lagu daray dambiisha!")
+                st.rerun()
+
+        if st.session_state.current_items:
+            st.markdown("---")
+            basket_df = pd.DataFrame(st.session_state.current_items)
+            st.dataframe(basket_df, use_container_width=True, hide_index=True)
+            grand_total = basket_df["total"].sum()
+            st.markdown(f"### 🏷️ Grand Total: **${grand_total:,.2f}**")
+            
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button("🗑️ Clear Basket"):
+                    st.session_state.current_items = []
+                    st.rerun()
+            with col_b2:
+                if st.button("💾 Save Full Transaction to SQL"):
+                    if not c_name.strip(): st.error("Qor magaca macaamilka!")
+                    else:
+                        conn = get_db_connection()
+                        if conn:
+                            with conn.cursor() as cur:
+                                for item in st.session_state.current_items:
+                                    cur.execute("""
+                                        INSERT INTO sql_tico_sales (date, customer_name, item_name, quantity, price, cost_price, discount, total, status)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                                    """, (str(s_date), c_name.strip(), item["item_name"], item["quantity"], item["price"], item["cost_price"], item["discount"], item["total"], status))
+                                conn.commit()
+                            conn.close()
+                            st.session_state.current_items = []
+                            st.success("✅ Si guul leh loogu xareeyey SQL Database!")
+                            st.rerun()
+
+    # ------------------------------------------------------------------------
+    # PAGE: PAYMENT ENTRY
+    # ------------------------------------------------------------------------
+    elif menu == "Payment Entry":
+        st.markdown("## 💳 Record Customer Payment (SQL)")
+        with st.form("p_form", clear_on_submit=True):
+            p_date = st.date_input("Payment Date", value=datetime.now())
+            cust_name = st.text_input("Customer Name")
+            amt = st.number_input("Amount Paid ($)", min_value=0.01, step=0.01)
+            rcv = st.text_input("Received By")
+            sub_p = st.form_submit_button("💾 Save Payment to SQL")
+
+        if sub_p:
+            if not cust_name.strip() or not rcv.strip(): st.error("Buuxi meelaha banaan!")
+            else:
+                conn = get_db_connection()
+                if conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO sql_tico_payments (date, customer_name, amount_paid, received_by)
+                            VALUES (%s, %s, %s, %s);
+                        """, (str(p_date), cust_name.strip(), amt, rcv.strip()))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Payment-gii waa lagu guuleystay!")
+                    st.rerun()
+
+    # ------------------------------------------------------------------------
+    # PAGE: CUSTOMER HISTORY
+    # ------------------------------------------------------------------------
+    elif menu == "Customer History":
+        st.markdown("## 🔍 Customer Purchase History")
+        if sales_df.empty: st.info("Xog kuma jirto database-ka.")
+        else:
+            all_customers = sorted(sales_df["customer_name"].unique())
+            selected_cust = st.selectbox("👤 Dooro Macaamilka:", all_customers)
+            
+            if selected_cust:
+                st.divider()
+                cust_sales = sales_df[sales_df["customer_name"] == selected_cust].copy()
+                cust_sales["date"] = cust_sales["date"].dt.strftime("%Y-%m-%d")
+                
+                st.dataframe(cust_sales[["date", "item_name", "quantity", "price", "discount", "total", "status"]].sort_values("date", ascending=False), use_container_width=True, hide_index=True)
+                
+                total_bought = cust_sales["total"].sum()
+                total_invoice = cust_sales[cust_sales["status"] == "Invoice"]["total"].sum()
+                total_cash = cust_sales[cust_sales["status"] == "Cash"]["total"].sum()
+                
+                total_paid = 0.0
+                if not payments_df.empty:
+                    cust_payments = payments_df[payments_df["customer_name"] == selected_cust].copy()
+                    if not cust_payments.empty:
+                        total_paid = cust_payments["amount_paid"].sum()
+                        
+                remaining_debt = total_invoice - total_paid
+                
+                c_box1, c_box2, c_box3, c_box4 = st.columns(4)
+                with c_box1: st.metric("🛍️ Total Purchases", f"${total_bought:,.2f}")
+                with c_box2: st.metric("💵 Cash Purchases", f"${total_cash:,.2f}")
+                with c_box3: st.metric("🧾 Invoice Total", f"${total_invoice:,.2f}")
+                with c_box4: st.metric("🔴 Remaining Debt", f"${remaining_debt:,.2f}")
+
+    # ------------------------------------------------------------------------
+    # PAGE: DATA MANAGEMENT
+    # ------------------------------------------------------------------------
+    elif menu == "Data Management":
+        st.markdown("## ⚙️ Data Management (Wax ka beddel iyo Tirtiris SQL dhab ah)")
+        
+        if sales_df.empty:
+            st.info("Database-ka hadda wax xog ah kuma jiraan.")
+        else:
+            st.markdown("### 🔍 Dooro ID-ga Safka aad rabto inaad wax ka beddesho ama tirtirto")
+            
+            manage_df = sales_df.copy()
+            manage_df["date"] = manage_df["date"].dt.strftime("%Y-%m-%d")
+            st.dataframe(manage_df.sort_values("id", ascending=False), use_container_width=True, hide_index=True)
+            
+            st.divider()
+            
+            options_id = sorted(sales_df["id"].tolist(), reverse=True)
+            selected_id = st.selectbox("🎯 Dooro ID-ga:", options_id)
+            
+            row_data = sales_df[sales_df["id"] == selected_id].iloc[0]
+            
+            st.markdown(f"**Macaamilka:** {row_data['customer_name']} | **Agabka:** {row_data['item_name']}")
+            
+            col_e1, col_e2, col_e3 = st.columns(3)
+            with col_e1: edit_qty = st.number_input("Quantity", min_value=1, value=int(row_data["quantity"]))
+            with col_e2: edit_price = st.number_input("Price ($)", min_value=0.00, value=float(row_data["price"]))
+            with col_e3: edit_disc = st.number_input("Discount ($)", min_value=0.00, value=float(row_data["discount"]))
+            
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("🔄 Beddel Xogta (Update SQL)", use_container_width=True):
+                    new_total = (edit_qty * edit_price) - edit_disc
+                    conn = get_db_connection()
+                    if conn:
+                        with conn.cursor() as cur:
+                            cur.execute("""
+                                UPDATE sql_tico_sales 
+                                SET quantity = %s, price = %s, discount = %s, total = %s
+                                WHERE id = %s;
+                            """, (edit_qty, edit_price, edit_disc, new_total, int(selected_id)))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"✅ Safka ID {selected_id} si guul leh ayaa loo cusboonaysiiyey!")
+                        st.rerun()
+                        
+            with col_btn2:
+                if st.button("❌ Tirtir Safkan (Delete from SQL)", use_container_width=True):
+                    conn = get_db_connection()
+                    if conn:
+                        with conn.cursor() as cur:
+                            cur.execute("DELETE FROM sql_tico_sales WHERE id = %s;", (int(selected_id),))
+                        conn.commit()
+                        conn.close()
+                        st.error(f"🗑️ Safka ID {selected_id} gebi ahaanba waa la tirtiray!")
+                        st.rerun()
