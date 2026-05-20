@@ -1,2 +1,9 @@
 psycopg2-binary
 pandas
+plotly
+openpyxl
+streamlit
+psycopg2-binary
+pandas
+plotly
+openpyxl
