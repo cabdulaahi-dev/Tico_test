@@ -232,64 +232,18 @@ div[data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
 # ============================================================================
 def check_password():
     if not st.session_state.authenticated:
-        # ── Landing page hero (top) ──────────────────────────────────────────
         st.markdown("""
-        <div style='text-align:center; padding: 5rem 1rem 2rem 1rem;'>
-            <div style='font-size:4rem; margin-bottom:0.5rem;'>📊</div>
-            <h1 style='color:#e8f0ff; font-size:2.8rem; font-weight:700; margin:0.3rem 0; letter-spacing:-0.03em;'>
-                TICO Wholesale Pro
-            </h1>
-            <p style='color:#4a7ab8; font-size:1.05rem; margin:0.5rem 0 0.3rem 0;'>
-                Advanced Analytics & Business Intelligence Platform
-            </p>
-            <p style='color:#2a4a6a; font-size:0.85rem;'>
-                Sales · Customer Analytics · Profit & Loss · Reports & Export
-            </p>
+        <div style='text-align:center; padding: 4rem 0 2rem 0;'>
+            <div style='font-size:3rem;'>📊</div>
+            <h1 style='color:#e8f0ff; font-size:2.5rem; font-weight:700; margin:0.5rem 0;'>TICO Wholesale Pro</h1>
+            <p style='color:#4a7ab8; font-size:1rem;'>Advanced Analytics & Business Intelligence Platform</p>
         </div>
         """, unsafe_allow_html=True)
-
-        # ── Feature highlights (middle) ──────────────────────────────────────
-        f1, f2, f3, f4 = st.columns(4)
-        features = [
-            ("📈", "Sales Tracking", "Multi-item basket with real-time totals"),
-            ("👥", "Customer Analytics", "Top & low customers, debt tracking"),
-            ("📦", "Product Analytics", "Best sellers & slow movers"),
-            ("📋", "Reports & Export", "Excel export & printable reports"),
-        ]
-        for col, (icon, title, desc) in zip([f1, f2, f3, f4], features):
-            with col:
-                st.markdown(f"""
-                <div style='background:#0a1628;border:1px solid #1a2840;border-radius:10px;
-                            padding:1.2rem;text-align:center;margin-bottom:0.5rem;'>
-                    <div style='font-size:1.8rem;'>{icon}</div>
-                    <div style='color:#90caf9;font-weight:600;font-size:0.9rem;margin:0.3rem 0;'>{title}</div>
-                    <div style='color:#4a7ab8;font-size:0.78rem;'>{desc}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # ── Spacer pushing login form toward the bottom ───────────────────────
-        st.markdown("<br><br><br>", unsafe_allow_html=True)
-        st.divider()
-
-        # ── Login form (bottom) ───────────────────────────────────────────────
-        st.markdown("""
-        <div style='text-align:center; margin-bottom:1rem;'>
-            <span style='color:#4a7ab8; font-size:0.9rem;'>🔐 &nbsp; Sign in to access your dashboard</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-        col1, col2, col3 = st.columns([1, 1.2, 1])
+        col1, col2, col3 = st.columns([1, 1.5, 1])
         with col2:
-            st.markdown("""
-            <div style="background:#0e1e35;border:1px solid #1e3050;border-radius:12px;
-                        padding:2rem;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
-            """, unsafe_allow_html=True)
-            st.markdown("##### 🔐 Secure Login")
-            password = st.text_input(
-                "Password", type="password",
-                key="pwd_input", placeholder="Enter your access password...",
-                label_visibility="collapsed"
-            )
+            st.markdown('<div style="background:#0e1e35;border:1px solid #1e3050;border-radius:12px;padding:2rem;">', unsafe_allow_html=True)
+            st.markdown("#### 🔐 Secure Login")
+            password = st.text_input("Enter Password", type="password", key="pwd_input", placeholder="Enter your password...")
             if st.button("🚀 Unlock Access", use_container_width=True):
                 if password == "Tico000123":
                     st.session_state.authenticated = True
@@ -302,8 +256,6 @@ def check_password():
                 else:
                     st.error("❌ Password khaldan!")
             st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
         return False
     return True
 
