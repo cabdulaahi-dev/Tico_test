@@ -359,19 +359,13 @@ if check_password():
     sales_df, payments_df = load_data()
 
     # --- Header ---
-    c1, c2, c3 = st.columns([3, 1, 1])
+    c1, c2 = st.columns([4, 1])
     with c1:
         st.markdown("# 📊 TICO Wholesale Pro")
     with c2:
         badge = 'role-admin' if st.session_state.role == "admin" else 'role-viewer'
         label = '👤 ADMIN' if st.session_state.role == "admin" else '👁️ VIEWER'
         st.markdown(f'<br><span class="role-badge {badge}">{label}</span>', unsafe_allow_html=True)
-    with c3:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🚪 Logout"):
-            st.session_state.authenticated = False
-            st.session_state.role = None
-            st.rerun()
     st.divider()
 
     # --- Sidebar ---
@@ -418,6 +412,16 @@ if check_password():
             time_filter = "Last Year"
         else:
             time_filter = raw_filter
+
+        # ── Logout at the very bottom of sidebar ──────────────────────────
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.divider()
+        role_label = "Admin" if st.session_state.role == "admin" else "Viewer"
+        st.markdown(f'<p style="color:#4a7ab8;font-size:0.8rem;margin:0 0 0.5rem 0;">Logged in as: <b style="color:#90caf9">{role_label}</b></p>', unsafe_allow_html=True)
+        if st.button("🚪 Logout", use_container_width=True, key="sidebar_logout"):
+            st.session_state.authenticated = False
+            st.session_state.role = None
+            st.rerun()
 
     filtered_sales = filter_by_period(sales_df, time_filter)
 
