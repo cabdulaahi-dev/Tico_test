@@ -441,7 +441,7 @@ if check_password():
     # ========================================================================
     # PAGE: SALES ENTRY
     # ========================================================================
-    elif menu == "📝 Sales Entry":
+     elif menu == "📝 Sales Entry":
         st.markdown("## 📝 Record New Sale")
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         with col_m1: s_date = st.date_input("Date", value=datetime.now())
@@ -497,13 +497,7 @@ if check_password():
                                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                                     """, (str(s_date), c_name.strip(), item["item_name"],
                                           item["quantity"], item["price"], item["cost_price"],
-                                          item["discount"], item["total"], status,
-                                          invoice_num.strip() or None))
-                            conn.commit()
-                            conn.close()
-                            st.session_state.current_items = []
-                            st.success("✅ Si guul leh loogu xareeyey SQL Database!")
-                            st.rerun()
+                                          item["discount"], item["total"],
 
     # ========================================================================
     # PAGE: PAYMENT ENTRY
@@ -648,90 +642,95 @@ if check_password():
         # TAB 2 — VIEW & MANAGE (Grouped by Customer)
         # ════════════════════════════════════════════════════════════════════
         with tab_daawo:
-            st.markdown("#### 📋 Dhamaan Uruurista — Loo Uruuriyey Macaamilka")
+    st.markdown("#### 📋 Dhamaan Iibka Uruuriska — Dropdown Nidaamsan")
 
-            # Load hold items from DB
-            hold_df = pd.DataFrame()
-            conn = get_db_connection()
-            if conn:
-                try:
-                    hold_df = pd.read_sql_query(
-                        "SELECT * FROM sql_tico_hold_items ORDER BY date DESC, customer_name ASC",
-                        conn
-                    )
-                except Exception:
-                    st.info("📭 Jadwalka sql_tico_hold_items wali lama abuuri. Geli xog marka hore.")
-                finally:
-                    conn.close()
+    # Kasoo jiid xogta database-ka ee sql_tico_sales laakiin ah kuwa noocoodu yahay Uruuris
+    hold_df = pd.DataFrame()
+    conn = get_db_connection()
+    if conn:
+        try:
+            hold_df = pd.read_sql_query(
+                "SELECT * FROM sql_tico_sales WHERE sale_type = 'Uruuris' ORDER BY date DESC", 
+                conn
+            )
+        except Exception as e:
+            st.info("📭 Xogta uruuriska lama heli karo: " + str(e))
+        finally:
+            conn.close()
 
-            if hold_df.empty:
-                st.info("📭 Wax xog ah kuma jirto uruurista hadda.")
-            else:
-                hold_df["date"] = pd.to_datetime(hold_df["date"], errors="coerce")
+    if hold_df.empty:
+        st.info("📭 Wax xog ah oo iib uruuris ah kuma jirto database-ka hadda.")
+    else:
+        hold_df["date"] = pd.to_datetime(hold_df["date"], errors="coerce")
 
-                # ── Summary bar ─────────────────────────────────────────────
-                total_rows   = len(hold_df)
-                total_custs  = hold_df["customer_name"].nunique()
-                total_items  = hold_df["quantity"].sum()
+        # ── Summary yar oo ku saabsan uruuriska ──────────────────────
+        total_rows   = len(hold_df)
+        total_custs  = hold_df["customer_name"].nunique()
+        total_items  = hold_df["quantity"].sum()
 
-                sm1, sm2, sm3 = st.columns(3)
-                with sm1: st.markdown(safe_metric("📋 Wadarta Safafa", f"{total_rows:,}"), unsafe_allow_html=True)
-                with sm2: st.markdown(safe_metric("👥 Macaamiisha", f"{total_custs:,}", "metric-gold"), unsafe_allow_html=True)
-                with sm3: st.markdown(safe_metric("📦 Wadarta Alaabta", f"{int(total_items):,}", "metric-green"), unsafe_allow_html=True)
+        sm1, sm2, sm3 = st.columns(3)
+        with sm1: st.markdown(safe_metric("📋 Wadarta Safafa", f"{total_rows:,}"), unsafe_allow_html=True)
+        with sm2: st.markdown(safe_metric("👥 Macaamiisha/Kooxaha", f"{total_custs:,}", "metric-gold"), unsafe_allow_html=True)
+        with sm3: st.markdown(safe_metric("📦 Wadarta Alaabta", f"{int(total_items):,}", "metric-green"), unsafe_allow_html=True)
 
-                st.divider()
+        st.divider()
 
-                # ── Search / filter ─────────────────────────────────────────
-                search = st.text_input("🔍 Raadi Macaamilka", placeholder="Qor magaca macaamilka...", key="hold_search")
-                if search.strip():
-                    hold_df = hold_df[hold_df["customer_name"].str.contains(search.strip(), case=False, na=False)]
+        # ── Bar-ka Raadinta ─────────────────────────────────────────
+        search = st.text_input("🔍 Ka raadi Magaca Macaamilka / Uruuriska:", placeholder="Qor magaca...", key="hold_search_opt")
+        if search.strip():
+            hold_df = hold_df[hold_df["customer_name"].str.contains(search.strip(), case=False, na=False)]
 
-                # ── Grouped rows by customer (click to expand) ──────────────
-                customers = hold_df["customer_name"].unique()
+        # ── Grouping logic (Isbaaro/Saf unbaa muuqanaya ilaa la gujiyo) ──
+        grouped = hold_df.groupby(['customer_name', 'invoice_number'])
 
-                for cust in customers:
-                    cust_df = hold_df[hold_df["customer_name"] == cust].copy()
-                    cust_df["date"] = cust_df["date"].dt.strftime("%Y-%m-%d")
-                    item_count = int(cust_df["quantity"].sum())
-                    row_count  = len(cust_df)
-                    inv_list   = cust_df["invoice_number"].dropna().unique()
-                    inv_label  = ", ".join(inv_list) if len(inv_list) > 0 else "—"
+        for (customer, invoice), group_data in grouped:
+            item_count = int(group_data["quantity"].sum())
+            row_count  = len(group_data)
+            inv_label  = invoice if invoice else "—"
+            
+            # Expander-ka rasmiga ah ee qarinaya alaabta
+            with st.expander(f"👤 Macamiilka: {customer}  |  📄 Boonada: {inv_label}  ({row_count} nooc oo alaab ah, Qty: {item_count})"):
+                
+                # Diyaarinta shaxda hoose ka soo baxaysa
+                display_df = group_data[['id', 'date', 'item_name', 'quantity', 'price', 'total']].copy()
+                display_df["date"] = display_df["date"].dt.strftime("%Y-%m-%d")
+                display_df.columns = ['ID', 'Taariikhda', 'Magaca Alaabta', 'Tirada', 'Qiimaha', 'Wadarta ($)']
+                
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                
+                # Badhanka tirtirista ee admin-ka oo kaliya u gaarka ah
+                if st.session_state.role == "admin":
+                    st.markdown("---")
+                    del_col1, del_col2 = st.columns([3, 1])
+                    with del_col1:
+                        del_id = st.selectbox("🗑️ Dooro ID aad tirtireyso:", options=display_df["ID"].tolist(), key=f"del_id_{customer}_{invoice}")
+                    with del_col2:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("❌ Tirtir Safka", key=f"del_btn_{customer}_{invoice}", use_container_width=True):
+                            conn = get_db_connection()
+                            if conn:
+                                try:
+                                    with conn.cursor() as cur:
+                                        # 1. Tirtir safka la doortay
+                                        cur.execute("DELETE FROM sql_tico_sales WHERE id = %s;", (int(del_id),))
+                                        
+                                        # 2. QEYBTA LABAAD: Dib u hagaaji sequence-ka nidaamka database-ka si uusan u khalkhalin tirsiga dambe
+                                        cur.execute("""
+                                            SELECT setval(
+                                                pg_get_serial_sequence('sql_tico_sales', 'id'), 
+                                                COALESCE(MAX(id), 0) + 1, 
+                                                false
+                                            ) FROM sql_tico_sales;
+                                        """)
+                                    conn.commit()
+                                    st.success(f"🗑️ Safkii ID {del_id} waa la tirtiray, tirsigiina waa la isku dhex hagaajiyey!")
+                                    st.rerun()
+                                except Exception as delete_error:
+                                    conn.rollback()
+                                    st.error(f"⚠️ Khalad ayaa dhacay xilliga tirtirista: {delete_error}")
+                                finally:
+                                    conn.close()
 
-                    with st.expander(
-                        f"👤  {cust}   ·   {row_count} item{'s' if row_count>1 else ''}   ·   "
-                        f"Qty: {item_count}   ·   Ref: {inv_label}",
-                        expanded=False
-                    ):
-                        cols_show = [c for c in ["id","date","invoice_number","item_name","quantity","note"] if c in cust_df.columns]
-                        st.dataframe(
-                            cust_df[cols_show].sort_values("date", ascending=False),
-                            use_container_width=True, hide_index=True
-                        )
-
-                        # ── Delete individual rows ───────────────────────────
-                        if st.session_state.role == "admin":
-                            st.markdown("---")
-                            del_col1, del_col2 = st.columns([2, 1])
-                            with del_col1:
-                                del_id = st.selectbox(
-                                    "🗑️ Dooro ID aad tirtireyso:",
-                                    options=cust_df["id"].tolist(),
-                                    key=f"del_id_{cust}"
-                                )
-                            with del_col2:
-                                st.markdown("<br>", unsafe_allow_html=True)
-                                if st.button("❌ Tirtir", key=f"del_btn_{cust}", use_container_width=True):
-                                    conn = get_db_connection()
-                                    if conn:
-                                        with conn.cursor() as cur:
-                                            cur.execute(
-                                                "DELETE FROM sql_tico_hold_items WHERE id = %s;",
-                                                (int(del_id),)
-                                            )
-                                        conn.commit()
-                                        conn.close()
-                                        st.success(f"🗑️ ID {del_id} waa la tirtiray!")
-                                        st.rerun()
 
     # ========================================================================
     # PAGE: CUSTOMER ANALYTICS ⭐ NEW
