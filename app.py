@@ -43,31 +43,6 @@ def get_db_connection():
         st.error(f"❌ Xiriirka Database-ka ayaa go'an: {e}")
         return None
 
-def check_db_schema():
-    """Hubi haddii kaxda 'sale_type' ay ku jirto database-ka, haddii kalena ku dar."""
-    conn = get_db_connection()
-    if conn:
-        try:
-            with conn.cursor() as cur:
-                # Ku dar column-ka sale_type haddii uusan jirin (Default waa 'Iib Caadi ah')
-                cur.execute("""
-                    ALTER TABLE sql_tico_sales 
-                    ADD COLUMN IF NOT EXISTS sale_type VARCHAR(50) DEFAULT 'Iib Caadi ah';
-                """)
-                # Sidoo kale hubi in column-ka invoice_number uu jiro
-                cur.execute("""
-                    ALTER TABLE sql_tico_sales 
-                    ADD COLUMN IF NOT EXISTS invoice_number VARCHAR(100);
-                """)
-            conn.commit()
-        except Exception as e:
-            pass
-        finally:
-            conn.close()
-
-# Samee schema check marka app-ku furmo
-check_db_schema()
-
 def load_data():
     sales_df = pd.DataFrame()
     payments_df = pd.DataFrame()
@@ -83,8 +58,6 @@ def load_data():
     if not sales_df.empty:
         sales_df["date"] = pd.to_datetime(sales_df["date"], errors="coerce")
         sales_df["item_profit"] = sales_df["total"] - (sales_df["quantity"] * sales_df["cost_price"])
-        if "sale_type" not in sales_df.columns:
-            sales_df["sale_type"] = "Iib Caadi ah"
     if not payments_df.empty:
         payments_df["date"] = pd.to_datetime(payments_df["date"], errors="coerce")
     return sales_df, payments_df
@@ -224,7 +197,6 @@ div[data-baseweb="select"] > div {
     border-radius: 20px; font-size: 0.8rem; font-weight: 600;
     letter-spacing: 0.05em;
 }
-.role-badge { display: inline-block; padding: 0.3rem 1rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.05em; }
 .role-admin { background: linear-gradient(135deg, #b71c1c, #c62828); color: white; }
 .role-viewer { background: linear-gradient(135deg, #e65100, #f57c00); color: white; }
 
@@ -357,6 +329,13 @@ if check_password():
                 "📝 Sales Entry",
                 "💳 Payment Entry",
                 "📥 Uruuris (No Invoice)",
+                "─── Xog Daawo ───",
+                "💵 Daawo: Cash Sales",
+                "🧾 Daawo: Invoice Sales",
+                "📦 Daawo: Uruuris",
+                "💳 Daawo: Payments",
+                "🔴 Lacagaha Maqan",
+                "─── Analytics ───",
                 "👥 Customer Analytics",
                 "📦 Product Analytics",
                 "📈 Time Analytics",
@@ -388,11 +367,13 @@ if check_password():
             index=0,
             key="period_filter"
         )
+        # Ignore separator line
         if raw_filter == "─────────":
             time_filter = "Last Year"
         else:
             time_filter = raw_filter
 
+        # ── Logout at the very bottom of sidebar ──────────────────────────
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.divider()
         role_label = "Admin" if st.session_state.role == "admin" else "Viewer"
@@ -427,6 +408,7 @@ if check_password():
             st.divider()
             col_ch1, col_ch2 = st.columns(2)
 
+            # Revenue trend by date
             with col_ch1:
                 daily = filtered_sales.groupby(filtered_sales["date"].dt.date).agg(
                     Revenue=("total", "sum"),
@@ -443,6 +425,7 @@ if check_password():
                     title_font_color='#90caf9', height=300, margin=dict(l=0,r=0,t=40,b=0))
                 st.plotly_chart(fig, use_container_width=True)
 
+            # Top items pie
             with col_ch2:
                 item_rev = filtered_sales.groupby("item_name")["total"].sum().nlargest(8).reset_index()
                 fig2 = px.pie(item_rev, names="item_name", values="total",
@@ -456,7 +439,7 @@ if check_password():
             disp = filtered_sales.head(20).copy()
             disp["date"] = disp["date"].dt.strftime("%Y-%m-%d")
             st.dataframe(
-                disp[["id","date","customer_name","item_name","quantity","price","discount","total","status","sale_type"]],
+                disp[["id","date","customer_name","item_name","quantity","price","discount","total","status"]],
                 use_container_width=True, hide_index=True
             )
         else:
@@ -466,88 +449,309 @@ if check_password():
     # PAGE: SALES ENTRY
     # ========================================================================
     elif menu == "📝 Sales Entry":
-        st.markdown("## 📝 Record New Sale")
-        
-        # Doorashada Nooca Iibka (Sale Type)
-        col_t1, col_t2 = st.columns([1, 3])
-        with col_t1:
-            s_type = st.selectbox("📦 Nooca Iibka", ["Iib Caadi ah", "Uruuris"])
-            
-        st.divider()
-        
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        with col_m1: 
-            s_date = st.date_input("Date", value=datetime.now())
-        with col_m2: 
-            c_name = st.text_input("Customer / Group Name", placeholder="Geli magaca macaamilka ama kooxda...")
-        with col_m3: 
-            if s_type == "Uruuris":
-                status = st.selectbox("Payment Status", ["Cash"], disabled=True, help="Iibka Uruuriska had iyo jeer waa Cash.")
-            else:
-                status = st.selectbox("Payment Status", ["Cash", "Invoice"])
-        with col_m4: 
-            invoice_num = st.text_input("📄 Invoice Number", placeholder="e.g. INV-0042")
+        st.markdown("## 📝 Geli Iib Cusub")
 
-        st.divider()
-        st.markdown("#### ➕ Add Items to Basket")
-        col_i1, col_i2, col_i3, col_i4 = st.columns([2, 1, 1, 1])
-        with col_i1: i_name = st.text_input("Item Name", key="i_txt")
-        with col_i2: qty = st.number_input("Quantity", min_value=1, value=1, key="i_qty")
-        with col_i3: price = st.number_input("Price ($)", min_value=0.00, value=0.00, key="i_prc")
-        with col_i4: c_price = st.number_input("Cost Price ($)", min_value=0.00, value=0.00, key="i_cst")
-        discount = st.number_input("⚡ Discount ($)", min_value=0.00, value=0.00)
+        # ── session state keys ───────────────────────────────────────────────
+        for k, v in {
+            "se_items":    [],   # basket items
+            "se_type":     "Iib Caadi ah",
+        }.items():
+            if k not in st.session_state:
+                st.session_state[k] = v
 
-        if st.button("➕ Add Item to Basket", use_container_width=True):
-            if not i_name.strip():
-                st.error("Geli magaca badeecada!")
-            else:
-                tot = (qty * price) - discount
-                st.session_state.current_items.append({
-                    "item_name": i_name.strip(), "quantity": qty, "price": price,
-                    "cost_price": c_price, "discount": discount, "total": tot
-                })
-                st.success(f"✓ {i_name} lagu daray dambiisha!")
-                st.rerun()
+        tab_geli, tab_uur_view = st.tabs(["➕ Geli Iib", "📋 Daawo Iibka Uruuris"])
 
-        if st.session_state.current_items:
+        # ════════════════════════════════════════════════════════════════════
+        # TAB 1 — ENTRY FORM
+        # ════════════════════════════════════════════════════════════════════
+        with tab_geli:
+
+            # ── Sale type selector ───────────────────────────────────────────
+            st.markdown("#### 🔀 Nooca Iibka")
+            sale_type = st.radio(
+                "",
+                ["🛒  Iib Caadi ah", "📦  Iib Uruuris ah"],
+                horizontal=True,
+                key="se_type_radio"
+            )
+            is_uuruuris = "Uruuris" in sale_type
+
             st.divider()
-            basket_df = pd.DataFrame(st.session_state.current_items)
-            st.dataframe(basket_df, use_container_width=True, hide_index=True)
-            grand_total = basket_df["total"].sum()
-            st.markdown(f"### 🏷️ Grand Total: **${grand_total:,.2f}**")
 
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if st.button("🗑️ Clear Basket", use_container_width=True):
-                    st.session_state.current_items = []
+            # ── Header fields (differ by type) ──────────────────────────────
+            if not is_uuruuris:
+                # CAADI
+                c1, c2, c3, c4 = st.columns(4)
+                with c1: se_date    = st.date_input("📅 Taariikhda", value=datetime.now(), key="se_date_c")
+                with c2: se_cust    = st.text_input("👤 Magaca Macaamilka", key="se_cust_c")
+                with c3: se_status  = st.selectbox("💳 Lacag Bixinta", ["Cash", "Invoice"], key="se_status_c")
+                with c4: se_inv     = st.text_input("📄 Lambarka Boonada", placeholder="INV-0001", key="se_inv_c")
+
+            else:
+                # URUURIS
+                st.markdown("""
+                <div style='background:#071a0e;border:1px solid #1b5e20;border-radius:8px;
+                            padding:0.75rem 1.2rem;margin-bottom:1rem;'>
+                    <span style='color:#69f0ae;font-size:0.85rem;'>
+                        📦 <b>Iib Uruuris ah:</b> Alaabo badan waxaa lagu wada gariiri karaa
+                        <b>hal lambar boono</b> iyo <b>hal magac uruuris</b>.
+                        Lacag bixintu waxay si toos ah u noqotaa <b style="color:#ffca28;">CASH</b>.
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                c1, c2, c3 = st.columns(3)
+                with c1: se_date    = st.date_input("📅 Taariikhda", value=datetime.now(), key="se_date_u")
+                with c2: se_inv     = st.text_input("📄 Lambarka Boonada *", placeholder="UUR-0001", key="se_inv_u")
+                with c3: se_cust    = st.text_input("👥 Magaca Uruuriska *", placeholder="Xaafadda Hodan...", key="se_cust_u")
+                se_status = "Cash"   # locked
+
+                # Locked badge
+                st.markdown("""
+                <div style='display:inline-block;background:#0e1e35;border:1px solid #1e3050;
+                            border-radius:6px;padding:0.4rem 1rem;margin:0.3rem 0 0.8rem 0;'>
+                    <span style='color:#7090b8;font-size:0.8rem;'>💳 Lacag Bixinta:</span>
+                    <b style='color:#69f0ae;margin-left:0.5rem;'>CASH</b>
+                    <span style='color:#3a5a7a;font-size:0.75rem;margin-left:0.5rem;'>(si toos ah)</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # ── Item input row ───────────────────────────────────────────────
+            st.markdown("#### ➕ Ku Dar Alaabta")
+            ic1, ic2, ic3, ic4 = st.columns([2, 1, 1, 1])
+            with ic1: se_iname  = st.text_input("Magaca Alaabta",  key="se_iname")
+            with ic2: se_qty    = st.number_input("Qty", min_value=1, value=1, key="se_qty")
+            with ic3: se_price  = st.number_input("Price ($)", min_value=0.0, value=0.0, key="se_price")
+            with ic4: se_cost   = st.number_input("Cost ($)",  min_value=0.0, value=0.0, key="se_cost")
+            se_disc = st.number_input("⚡ Discount ($)", min_value=0.0, value=0.0, key="se_disc")
+
+            if st.button("➕ Ku Dar Dambiisha", use_container_width=True, key="se_add"):
+                if not se_iname.strip():
+                    st.error("⚠️ Geli magaca alaabta!")
+                elif not se_cust.strip():
+                    st.error("⚠️ Geli magaca macaamilka / uruuriska!")
+                else:
+                    tot = (se_qty * se_price) - se_disc
+                    st.session_state.se_items.append({
+                        "item_name":  se_iname.strip(),
+                        "quantity":   se_qty,
+                        "price":      se_price,
+                        "cost_price": se_cost,
+                        "discount":   se_disc,
+                        "total":      tot,
+                    })
+                    st.success(f"✓  **{se_iname.strip()}** lagu daray dambiisha!")
                     st.rerun()
-            with col_b2:
-                if st.button("💾 Save Transaction to SQL", use_container_width=True):
-                    if not c_name.strip():
-                        st.error("Qor magaca macaamilka!")
-                    else:
-                        conn = get_db_connection()
-                        if conn:
-                            try:
+
+            # ── Basket preview ───────────────────────────────────────────────
+            if st.session_state.se_items:
+                st.divider()
+                bdf = pd.DataFrame(st.session_state.se_items)
+                st.dataframe(bdf, use_container_width=True, hide_index=True)
+
+                grand = bdf["total"].sum()
+
+                # Summary pill (Uruuris)
+                if is_uuruuris:
+                    inv_lbl  = se_inv.strip()  if "se_inv"  in dir() else "—"
+                    cust_lbl = se_cust.strip() if "se_cust" in dir() else "—"
+                    st.markdown(f"""
+                    <div style='background:#0a1628;border:1px solid #1e3050;border-radius:8px;
+                                padding:0.7rem 1.2rem;margin:0.4rem 0;display:flex;gap:2rem;flex-wrap:wrap;'>
+                        <span style='color:#7090b8;font-size:0.85rem;'>
+                            📄 Boono: <b style='color:#e8f0ff;'>{inv_lbl or "—"}</b>
+                        </span>
+                        <span style='color:#7090b8;font-size:0.85rem;'>
+                            👥 Uruuris: <b style='color:#e8f0ff;'>{cust_lbl or "—"}</b>
+                        </span>
+                        <span style='color:#7090b8;font-size:0.85rem;'>
+                            💰 Wadarta: <b style='color:#69f0ae;'>${grand:,.2f}</b>
+                        </span>
+                        <span style='color:#7090b8;font-size:0.85rem;'>
+                            💳 <b style='color:#69f0ae;'>CASH</b>
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"### 🏷️ Grand Total: **${grand:,.2f}**")
+
+                bc1, bc2 = st.columns(2)
+                with bc1:
+                    if st.button("🗑️ Nadiifi Dambiisha", use_container_width=True, key="se_clear"):
+                        st.session_state.se_items = []
+                        st.rerun()
+                with bc2:
+                    btn_label = "💾 Keydi Uruuris" if is_uuruuris else "💾 Keydi Iibka"
+                    if st.button(btn_label, use_container_width=True, key="se_save"):
+                        # Validation
+                        err = None
+                        if not se_cust.strip():
+                            err = "⚠️ Geli magaca macaamilka!"
+                        elif is_uuruuris and not se_inv.strip():
+                            err = "⚠️ Uruuriska wuxuu u baahan yahay Lambarka Boonada!"
+                        if err:
+                            st.error(err)
+                        else:
+                            conn = get_db_connection()
+                            if conn:
                                 with conn.cursor() as cur:
-                                    for item in st.session_state.current_items:
+                                    for item in st.session_state.se_items:
                                         cur.execute("""
                                             INSERT INTO sql_tico_sales
-                                            (date, customer_name, item_name, quantity, price, cost_price, discount, total, status, invoice_number, sale_type)
-                                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                                        """, (str(s_date), c_name.strip(), item["item_name"],
-                                              item["quantity"], item["price"], item["cost_price"],
-                                              item["discount"], item["total"], status, 
-                                              invoice_num.strip() or None, s_type))
+                                            (date, customer_name, item_name, quantity,
+                                             price, cost_price, discount, total,
+                                             status, invoice_number, sale_type)
+                                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+                                        """, (
+                                            str(se_date),
+                                            se_cust.strip(),
+                                            item["item_name"],
+                                            item["quantity"],
+                                            item["price"],
+                                            item["cost_price"],
+                                            item["discount"],
+                                            item["total"],
+                                            se_status,
+                                            se_inv.strip() if se_inv.strip() else None,
+                                            "Uruuris" if is_uuruuris else "Caadi",
+                                        ))
                                 conn.commit()
-                                st.session_state.current_items = []
-                                st.success("✅ Iibka si guul leh ayaa loo keydiyey!")
-                                st.rerun()
-                            except Exception as e:
-                                conn.rollback()
-                                st.error(f"Khalad ayaa dhacay: {e}")
-                            finally:
                                 conn.close()
+                                st.session_state.se_items = []
+                                st.success("✅ Si guul leh ayaa loo keydsaday!")
+                                st.rerun()
+
+        # ════════════════════════════════════════════════════════════════════
+        # TAB 2 — VIEW URUURIS  (Expander rows — qarsan ilaa la gujiyо)
+        # ════════════════════════════════════════════════════════════════════
+        with tab_uur_view:
+            st.markdown("#### 📋 Iibka Uruuris — Loo Uruuriyey Boona & Macaamilka")
+            st.caption("Gujiso safka si aad u aragto alaabihii — waa mid qarsan ilaa la garaaco.")
+
+            # ── Pull Uruuris rows from DB ────────────────────────────────────
+            uur_df = pd.DataFrame()
+            if not sales_df.empty:
+                if "sale_type" in sales_df.columns:
+                    uur_df = sales_df[sales_df["sale_type"] == "Uruuris"].copy()
+                else:
+                    st.warning("""
+                    ⚠️ Column-ka **sale_type** ma jiro database-ka weli. Ku run gareey SQL-kan:
+                    ```sql
+                    ALTER TABLE sql_tico_sales
+                      ADD COLUMN IF NOT EXISTS sale_type    VARCHAR(50),
+                      ADD COLUMN IF NOT EXISTS invoice_number VARCHAR(100);
+                    ```
+                    """)
+
+            if uur_df.empty:
+                st.info("📭 Wax iib Uruuris ah kuma jirto nidaamka.")
+            else:
+                uur_df["date"] = pd.to_datetime(uur_df["date"], errors="coerce")
+
+                # ── Summary metrics ──────────────────────────────────────────
+                u_rev  = uur_df["total"].sum()
+                u_grp  = uur_df["customer_name"].nunique()
+                u_inv  = uur_df["invoice_number"].nunique() if "invoice_number" in uur_df.columns else 0
+
+                m1, m2, m3 = st.columns(3)
+                with m1: st.markdown(safe_metric("💰 Wadarta Dakhliga",  f"${u_rev:,.0f}", "metric-green"), unsafe_allow_html=True)
+                with m2: st.markdown(safe_metric("👥 Uruurisyada",       f"{u_grp}",        "metric-gold"),  unsafe_allow_html=True)
+                with m3: st.markdown(safe_metric("📄 Boonooyin",         f"{u_inv}"),                         unsafe_allow_html=True)
+
+                st.divider()
+
+                # ── Search bar ───────────────────────────────────────────────
+                uu_q = st.text_input(
+                    "🔍 Raadi Uruuris / Boono",
+                    placeholder="Qor magaca uruuriska ama lambarka boonada...",
+                    key="uu_search_v2"
+                )
+                if uu_q.strip():
+                    m = (
+                        uur_df["customer_name"].str.contains(uu_q.strip(), case=False, na=False) |
+                        uur_df["invoice_number"].astype(str).str.contains(uu_q.strip(), case=False, na=False)
+                    )
+                    uur_df = uur_df[m]
+                    if uur_df.empty:
+                        st.info(f"🔍 '{uu_q}' lama helin.")
+
+                # ── Build group index (invoice_number + customer_name) ───────
+                grp_key = ["invoice_number", "customer_name"] \
+                    if "invoice_number" in uur_df.columns else ["customer_name"]
+
+                groups = (
+                    uur_df.groupby(grp_key, dropna=False)
+                    .agg(
+                        Taariikh   = ("date",      "max"),
+                        Alaabo     = ("item_name", "count"),
+                        Qty_Guud   = ("quantity",  "sum"),
+                        Lacag_Guud = ("total",     "sum"),
+                    )
+                    .reset_index()
+                    .sort_values("Taariikh", ascending=False)
+                )
+
+                # ── One expander per group (collapsed by default) ────────────
+                for _, row in groups.iterrows():
+                    inv_no   = str(row.get("invoice_number") or "—")
+                    cust_nm  = row["customer_name"]
+                    n_lines  = int(row["Alaabo"])
+                    qty_tot  = int(row["Qty_Guud"])
+                    lac_tot  = row["Lacag_Guud"]
+                    taarikh  = pd.to_datetime(row["Taariikh"]).strftime("%Y-%m-%d") \
+                               if pd.notna(row["Taariikh"]) else "—"
+
+                    exp_label = (
+                        f"📄 {inv_no}   ·   "
+                        f"👥 {cust_nm}   ·   "
+                        f"📦 {n_lines} alaab   ·   "
+                        f"Qty: {qty_tot}   ·   "
+                        f"💰 ${lac_tot:,.2f}   ·   "
+                        f"📅 {taarikh}"
+                    )
+
+                    with st.expander(exp_label, expanded=False):
+                        # Filter exact detail rows
+                        if "invoice_number" in uur_df.columns:
+                            detail = uur_df[
+                                (uur_df["invoice_number"].fillna("—").astype(str) == inv_no) &
+                                (uur_df["customer_name"] == cust_nm)
+                            ].copy()
+                        else:
+                            detail = uur_df[uur_df["customer_name"] == cust_nm].copy()
+
+                        detail["date"] = detail["date"].dt.strftime("%Y-%m-%d")
+
+                        show = [c for c in
+                            ["id", "date", "item_name", "quantity",
+                             "price", "discount", "total"]
+                            if c in detail.columns]
+
+                        st.dataframe(
+                            detail[show].sort_values("date", ascending=False),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                        # Footer totals
+                        st.markdown(f"""
+                        <div style='background:#071428;border:1px solid #1e3050;border-radius:6px;
+                                    padding:0.5rem 1rem;margin-top:0.4rem;display:flex;gap:2.5rem;'>
+                            <span style='color:#7090b8;font-size:0.82rem;'>
+                                Wadarta Qty:
+                                <b style='color:#e8f0ff;'>{qty_tot}</b>
+                            </span>
+                            <span style='color:#7090b8;font-size:0.82rem;'>
+                                Wadarta Lacag:
+                                <b style='color:#69f0ae;'>${lac_tot:,.2f}</b>
+                            </span>
+                            <span style='color:#7090b8;font-size:0.82rem;'>
+                                💳 <b style='color:#69f0ae;'>Cash</b>
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+
 
     # ========================================================================
     # PAGE: PAYMENT ENTRY
@@ -568,120 +772,676 @@ if check_password():
             else:
                 conn = get_db_connection()
                 if conn:
-                    try:
-                        with conn.cursor() as cur:
-                            cur.execute("""
-                                INSERT INTO sql_tico_payments
-                                (date, customer_name, amount_paid, received_by, invoice_number)
-                                VALUES (%s, %s, %s, %s, %s);
-                            """, (str(p_date), cust_name.strip(), amt, rcv.strip(),
-                                  p_invoice.strip() or None))
-                        conn.commit()
-                        st.success("✅ Payment si guul leh ayaa loo keydsaday!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Cilad: {e}")
-                    finally:
-                        conn.close()
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO sql_tico_payments
+                            (date, customer_name, amount_paid, received_by, invoice_number)
+                            VALUES (%s, %s, %s, %s, %s);
+                        """, (str(p_date), cust_name.strip(), amt, rcv.strip(),
+                              p_invoice.strip() or None))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Payment si guul leh ayaa loo keydsaday!")
+                    st.rerun()
 
     # ========================================================================
-    # PAGE: URUURIS (NO INVOICE) ⭐ EXPANDER VIEW
+    # PAGE: URUURIS (NO INVOICE) ⭐ NEW
     # ========================================================================
     elif menu == "📥 Uruuris (No Invoice)":
-        st.markdown("## 📥 Uruuris — Maamulka Alaabta Aan Boona Lahayn")
+        st.markdown("## 📥 Uruuris — Alaabta Aan Boona Lahayn")
 
-        # Soo jiid dhamaan xogta iibka ee nooceedu yahay 'Uruuris'
-        hold_df = pd.DataFrame()
-        conn = get_db_connection()
-        if conn:
-            try:
-                hold_df = pd.read_sql_query(
-                    "SELECT * FROM sql_tico_sales WHERE sale_type = 'Uruuris' ORDER BY date DESC, id DESC", 
-                    conn
-                )
-            except Exception as e:
-                st.info("📭 Xogta uruuriska lama heli karo: " + str(e))
-            finally:
-                conn.close()
+        # ── Init session state for hold basket ──────────────────────────────
+        if "hold_items" not in st.session_state:
+            st.session_state.hold_items = []
 
-        if hold_df.empty:
-            st.info("📭 Wax xog ah oo iib uruuris ah kuma jirto database-ka hadda.")
-        else:
-            hold_df["date"] = pd.to_datetime(hold_df["date"], errors="coerce")
+        tab_geli, tab_daawo = st.tabs(["➕ Xog Geli", "📋 Daawo & Maamul"])
 
-            # Muga kooban (Summary)
-            total_rows   = len(hold_df)
-            total_custs  = hold_df["customer_name"].nunique()
-            total_items  = hold_df["quantity"].sum()
-            total_amount = hold_df["total"].sum()
+        # ════════════════════════════════════════════════════════════════════
+        # TAB 1 — DATA ENTRY
+        # ════════════════════════════════════════════════════════════════════
+        with tab_geli:
+            st.markdown("#### 📝 Geli Macluumaadka Uruuris")
 
-            sm1, sm2, sm3, sm4 = st.columns(4)
-            with sm1: st.markdown(safe_metric("📋 Wadarta Safafa", f"{total_rows:,}"), unsafe_allow_html=True)
-            with sm2: st.markdown(safe_metric("👥 Macaamiisha/Kooxaha", f"{total_custs:,}", "metric-gold"), unsafe_allow_html=True)
-            with sm3: st.markdown(safe_metric("📦 Wadarta Alaabta", f"{int(total_items):,}", "metric-green"), unsafe_allow_html=True)
-            with sm4: st.markdown(safe_metric("💰 Wadarta Qiimaha", f"${total_amount:,.2f}", "metric-green"), unsafe_allow_html=True)
+            col_h1, col_h2, col_h3 = st.columns(3)
+            with col_h1:
+                h_date = st.date_input("📅 Taariikhda", value=datetime.now(), key="h_date")
+            with col_h2:
+                h_invoice = st.text_input("📄 Lambarka Boonada / Reference", placeholder="e.g. REF-0099", key="h_inv")
+            with col_h3:
+                h_customer = st.text_input("👤 Magaca Macaamilka", placeholder="Customer name...", key="h_cust")
 
             st.divider()
+            st.markdown("#### 📦 Geli Alaabta")
 
-            # Bar-ka Raadinta Magaca
-            search = st.text_input("🔍 Ka raadi Magaca Macaamilka / Uruuriska:", placeholder="Qor magaca si aad u sifeeyso...", key="hold_search_opt")
-            if search.strip():
-                hold_df = hold_df[hold_df["customer_name"].str.contains(search.strip(), case=False, na=False)]
+            col_i1, col_i2, col_i3 = st.columns([3, 1, 1])
+            with col_i1:
+                h_item = st.text_input("Magaca Alaabta", placeholder="Item name...", key="h_item")
+            with col_i2:
+                h_qty = st.number_input("Tirada (Qty)", min_value=1, value=1, key="h_qty")
+            with col_i3:
+                h_note = st.text_input("Xusuusin (Optional)", placeholder="Note...", key="h_note")
 
-            st.markdown("### 📋 Dhamaan Iibka Uruuriska (Guji si aad u aragto alaabta)")
+            if st.button("➕ Ku Dar Dambiisha", use_container_width=True, key="h_add"):
+                if not h_item.strip():
+                    st.error("⚠️ Geli magaca alaabta!")
+                elif not h_customer.strip():
+                    st.error("⚠️ Geli magaca macaamilka!")
+                else:
+                    st.session_state.hold_items.append({
+                        "date": str(h_date),
+                        "invoice_number": h_invoice.strip() or None,
+                        "customer_name": h_customer.strip(),
+                        "item_name": h_item.strip(),
+                        "quantity": h_qty,
+                        "note": h_note.strip() or None,
+                    })
+                    st.success(f"✓ **{h_item.strip()}** lagu daray dambiisha!")
+                    st.rerun()
 
-            # Kooxayn lagu sameeyay Customer Name iyo Invoice Number
-            # Waxay hubineysaa in hal expander lagu ururiyo wixii isku boono ah
-            grouped = hold_df.groupby(['customer_name', 'invoice_number'], dropna=False)
+            # Show current basket
+            if st.session_state.hold_items:
+                st.divider()
+                st.markdown("##### 🧺 Dambiisha Hadda (Pending)")
+                basket_df = pd.DataFrame(st.session_state.hold_items)
+                st.dataframe(basket_df, use_container_width=True, hide_index=True)
+                st.markdown(f"**Wadarta Alaabta:** `{len(st.session_state.hold_items)}` safaf")
 
-            for (customer, invoice), group_data in grouped:
-                item_count = int(group_data["quantity"].sum())
-                row_count  = len(group_data)
-                group_total = group_data["total"].sum()
-                inv_label  = invoice if pd.notna(invoice) and str(invoice).strip() != "" else "— (Boono La'aan)"
-                
-                # Qari xogta ilaa isticmaaluhu gujiyo Expander-ka
-                with st.expander(f"👤 Macamiilka: {customer}  |  📄 Boonada: {inv_label}  ({row_count} saf, Qty: {item_count}, Total: ${group_total:,.2f})"):
-                    
-                    display_df = group_data[['id', 'date', 'item_name', 'quantity', 'price', 'discount', 'total']].copy()
-                    display_df["date"] = display_df["date"].dt.strftime("%Y-%m-%d")
-                    display_df.columns = ['ID', 'Taariikhda', 'Magaca Alaabta', 'Tirada (Qty)', 'Qiimaha ($)', 'Discount ($)', 'Wadarta ($)']
-                    
-                    st.dataframe(display_df, use_container_width=True, hide_index=True)
-                    
-                    # Badhanka tirtirista ee admin-ka oo kaliya u gaarka ah
-                    if st.session_state.role == "admin":
-                        st.markdown("---")
-                        del_col1, del_col2 = st.columns([3, 1])
-                        with del_col1:
-                            del_id = st.selectbox("🗑️ Dooro ID aad tirtireyso:", options=display_df["ID"].tolist(), key=f"del_id_{customer}_{invoice}")
-                        with del_col2:
-                            st.markdown("<br>", unsafe_allow_html=True)
-                            if st.button("❌ Tirtir Safka", key=f"del_btn_{customer}_{invoice}", use_container_width=True):
-                                conn = get_db_connection()
-                                if conn:
+                col_sb1, col_sb2 = st.columns(2)
+                with col_sb1:
+                    if st.button("🗑️ Nadiifi Dambiisha", use_container_width=True, key="h_clear"):
+                        st.session_state.hold_items = []
+                        st.rerun()
+                with col_sb2:
+                    if st.button("💾 Keydi Database-ka", use_container_width=True, key="h_save"):
+                        conn = get_db_connection()
+                        if conn:
+                            saved = 0
+                            errors = 0
+                            with conn.cursor() as cur:
+                                # Create table if not exists
+                                cur.execute("""
+                                    CREATE TABLE IF NOT EXISTS sql_tico_hold_items (
+                                        id SERIAL PRIMARY KEY,
+                                        date DATE,
+                                        invoice_number VARCHAR(100),
+                                        customer_name VARCHAR(255) NOT NULL,
+                                        item_name VARCHAR(255) NOT NULL,
+                                        quantity INTEGER NOT NULL DEFAULT 1,
+                                        note TEXT,
+                                        created_at TIMESTAMP DEFAULT NOW()
+                                    );
+                                """)
+                                for row in st.session_state.hold_items:
                                     try:
-                                        with conn.cursor() as cur:
-                                            cur.execute("DELETE FROM sql_tico_sales WHERE id = %s;", (int(del_id),))
-                                            # Dib u hagaaji sequence-ka id-ga
-                                            cur.execute("""
-                                                SELECT setval(
-                                                    pg_get_serial_sequence('sql_tico_sales', 'id'), 
-                                                    COALESCE(MAX(id), 0) + 1, 
-                                                    false
-                                                ) FROM sql_tico_sales;
-                                            """)
-                                        conn.commit()
-                                        st.success(f"🗑️ Safkii ID {del_id} waa la tirtiray!")
+                                        cur.execute("""
+                                            INSERT INTO sql_tico_hold_items
+                                            (date, invoice_number, customer_name, item_name, quantity, note)
+                                            VALUES (%s, %s, %s, %s, %s, %s);
+                                        """, (row["date"], row["invoice_number"],
+                                              row["customer_name"], row["item_name"],
+                                              row["quantity"], row["note"]))
+                                        saved += 1
+                                    except Exception:
+                                        errors += 1
+                            conn.commit()
+                            conn.close()
+                            st.session_state.hold_items = []
+                            if errors == 0:
+                                st.success(f"✅ {saved} safaf si guul leh ayaa loo keydsaday!")
+                            else:
+                                st.warning(f"⚠️ {saved} ayaa la keydsaday, {errors} cilad baa jirtay.")
+                            st.rerun()
+
+        # ════════════════════════════════════════════════════════════════════
+        # TAB 2 — VIEW & MANAGE (QuickBooks drill-down, no single-customer search)
+        # ════════════════════════════════════════════════════════════════════
+        with tab_daawo:
+            st.markdown("#### 📋 Dhamaan Uruurista — Loo Uruuriyey Macaamilka")
+            st.caption("👇 Gujiso macaamilka si aad u aragto alaabihiisa maalin maalin ah")
+
+            # Load hold items from DB
+            hold_df = pd.DataFrame()
+            conn = get_db_connection()
+            if conn:
+                try:
+                    hold_df = pd.read_sql_query(
+                        "SELECT * FROM sql_tico_hold_items ORDER BY date DESC, customer_name ASC",
+                        conn
+                    )
+                except Exception:
+                    st.info("📭 Jadwalka sql_tico_hold_items wali lama abuuri. Geli xog marka hore.")
+                finally:
+                    conn.close()
+
+            if hold_df.empty:
+                st.info("📭 Wax xog ah kuma jirto uruurista hadda.")
+            else:
+                hold_df["date"] = pd.to_datetime(hold_df["date"], errors="coerce")
+
+                # ── Summary metrics ──────────────────────────────────────────
+                total_rows  = len(hold_df)
+                total_custs = hold_df["customer_name"].nunique()
+                total_items = hold_df["quantity"].sum()
+
+                sm1, sm2, sm3 = st.columns(3)
+                with sm1: st.markdown(safe_metric("📋 Wadarta Safafa", f"{total_rows:,}"),                          unsafe_allow_html=True)
+                with sm2: st.markdown(safe_metric("👥 Macaamiisha",    f"{total_custs:,}", "metric-gold"),           unsafe_allow_html=True)
+                with sm3: st.markdown(safe_metric("📦 Wadarta Qty",    f"{int(total_items):,}", "metric-green"),     unsafe_allow_html=True)
+
+                st.divider()
+
+                # ── QuickBooks drill-down: grouped by customer → daily ───────
+                cust_totals = (
+                    hold_df.groupby("customer_name")["quantity"]
+                    .sum().reset_index()
+                    .sort_values("quantity", ascending=False)
+                )
+
+                for _, crow in cust_totals.iterrows():
+                    cust      = crow["customer_name"]
+                    total_qty = int(crow["quantity"])
+                    cust_df   = hold_df[hold_df["customer_name"] == cust].copy()
+                    n_rows    = len(cust_df)
+                    inv_list  = cust_df["invoice_number"].dropna().unique()
+                    inv_label = ", ".join(inv_list) if len(inv_list) > 0 else "—"
+
+                    with st.expander(
+                        f"👤  **{cust}**"
+                        f"　　　📦 {n_rows} item{'s' if n_rows>1 else ''}"
+                        f"　　　Qty: {total_qty}"
+                        f"　　　Ref: {inv_label}",
+                        expanded=False
+                    ):
+                        # Daily grouping
+                        dates = sorted(cust_df["date"].dt.date.unique(), reverse=True)
+
+                        for d in dates:
+                            day_df = cust_df[cust_df["date"].dt.date == d].copy()
+                            day_df["date"] = day_df["date"].dt.strftime("%Y-%m-%d")
+                            day_qty = int(day_df["quantity"].sum())
+
+                            st.markdown(f"""
+                            <div style='background:#071428;border-left:3px solid #1565c0;
+                                        border-radius:0 6px 6px 0;padding:0.4rem 1rem;
+                                        margin:0.6rem 0 0.3rem 0;display:flex;
+                                        justify-content:space-between;align-items:center;'>
+                                <span style='color:#90caf9;font-weight:600;font-size:0.9rem;'>
+                                    📅 {d.strftime("%A, %d %B %Y")}
+                                </span>
+                                <span style='color:#ffca28;font-family:monospace;font-size:0.85rem;'>
+                                    📦 {day_qty} items
+                                </span>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                            show_cols = [c for c in
+                                ["id","date","invoice_number","item_name","quantity","note"]
+                                if c in day_df.columns]
+                            st.dataframe(
+                                day_df[show_cols].reset_index(drop=True),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+
+                        # Footer + delete (admin only)
+                        st.markdown(f"""
+                        <div style='background:#0a1e35;border:1px solid #1e3050;border-radius:6px;
+                                    padding:0.5rem 1rem;margin-top:0.5rem;display:flex;gap:3rem;'>
+                            <span style='color:#7090b8;font-size:0.82rem;'>
+                                Items: <b style='color:#e8f0ff;'>{n_rows}</b>
+                            </span>
+                            <span style='color:#7090b8;font-size:0.82rem;'>
+                                Wadarta Qty: <b style='color:#ffca28;'>{total_qty}</b>
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        if st.session_state.role == "admin":
+                            st.markdown("---")
+                            dc1, dc2 = st.columns([2, 1])
+                            with dc1:
+                                del_id = st.selectbox(
+                                    "🗑️ Dooro ID aad tirtireyso:",
+                                    options=cust_df["id"].tolist(),
+                                    key=f"hold_del_id_{cust}"
+                                )
+                            with dc2:
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                if st.button("❌ Tirtir", key=f"hold_del_btn_{cust}",
+                                             use_container_width=True):
+                                    conn2 = get_db_connection()
+                                    if conn2:
+                                        with conn2.cursor() as cur:
+                                            cur.execute(
+                                                "DELETE FROM sql_tico_hold_items WHERE id=%s;",
+                                                (int(del_id),)
+                                            )
+                                        conn2.commit()
+                                        conn2.close()
+                                        st.success(f"🗑️ ID {del_id} waa la tirtiray!")
                                         st.rerun()
-                                    except Exception as delete_error:
-                                        conn.rollback()
-                                        st.error(f"⚠️ Khalad: {delete_error}")
-                                    finally:
-                                        conn.close()
+
 
     # ========================================================================
-    # PAGE: CUSTOMER ANALYTICS
+    # HELPER — QuickBooks drill-down renderer
+    # ========================================================================
+    def qb_customer_list(df, label_col, total_col, extra_cols=None,
+                         date_col="date", section_key="qb"):
+        """
+        Renders a two-level QuickBooks-style list:
+        Level 1 → customer rows (collapsed, show total)
+        Level 2 → daily grouped detail table (expanded on click)
+        extra_cols: additional columns to show in the detail table
+        """
+        if df.empty:
+            st.info("📭 Wax xog ah kuma jirto.")
+            return
+
+        # Build customer summary
+        cust_totals = (
+            df.groupby(label_col)[total_col]
+            .sum()
+            .reset_index()
+            .sort_values(total_col, ascending=False)
+        )
+
+        for i, crow in cust_totals.iterrows():
+            cust      = crow[label_col]
+            cust_tot  = crow[total_col]
+            cust_df   = df[df[label_col] == cust].copy()
+            n_rows    = len(cust_df)
+
+            exp_header = (
+                f"👤  **{cust}**"
+                f"　　　📦 {n_rows} transaction{'s' if n_rows>1 else ''}"
+                f"　　　💰 **${cust_tot:,.2f}**"
+            )
+
+            with st.expander(exp_header, expanded=False):
+                # ── Daily grouping ───────────────────────────────────────────
+                cust_df[date_col] = pd.to_datetime(cust_df[date_col], errors="coerce")
+                dates = sorted(cust_df[date_col].dt.date.unique(), reverse=True)
+
+                for d in dates:
+                    day_df = cust_df[cust_df[date_col].dt.date == d].copy()
+                    day_df[date_col] = day_df[date_col].dt.strftime("%Y-%m-%d")
+                    day_total = day_df[total_col].sum() if total_col in day_df.columns else 0
+
+                    # Date header bar
+                    st.markdown(f"""
+                    <div style='background:#071428;border-left:3px solid #1565c0;
+                                border-radius:0 6px 6px 0;padding:0.4rem 1rem;
+                                margin:0.6rem 0 0.3rem 0;display:flex;
+                                justify-content:space-between;align-items:center;'>
+                        <span style='color:#90caf9;font-weight:600;font-size:0.9rem;'>
+                            📅 {d.strftime("%A, %d %B %Y")}
+                        </span>
+                        <span style='color:#69f0ae;font-family:monospace;font-size:0.85rem;'>
+                            ${day_total:,.2f}
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    base_cols = [c for c in
+                        ["id","item_name","quantity","price","cost_price",
+                         "discount","total","status","invoice_number","sale_type"]
+                        if c in day_df.columns]
+                    if extra_cols:
+                        base_cols += [c for c in extra_cols
+                                      if c in day_df.columns and c not in base_cols]
+
+                    st.dataframe(
+                        day_df[base_cols].reset_index(drop=True),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                # Customer footer
+                st.markdown(f"""
+                <div style='background:#0a1e35;border:1px solid #1e3050;border-radius:6px;
+                            padding:0.5rem 1rem;margin-top:0.5rem;display:flex;gap:3rem;'>
+                    <span style='color:#7090b8;font-size:0.82rem;'>
+                        Transactions: <b style='color:#e8f0ff;'>{n_rows}</b>
+                    </span>
+                    <span style='color:#7090b8;font-size:0.82rem;'>
+                        Total: <b style='color:#69f0ae;'>${cust_tot:,.2f}</b>
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ========================================================================
+    # PAGE: DAAWO — CASH SALES
+    # ========================================================================
+    if menu == "💵 Daawo: Cash Sales":
+        st.markdown(f"## 💵 Cash Sales — *{time_filter}*")
+
+        if filtered_sales.empty or "status" not in filtered_sales.columns:
+            st.info("📭 Wax xog ah kuma jirto.")
+        else:
+            cash_df = filtered_sales[filtered_sales["status"] == "Cash"].copy()
+            if cash_df.empty:
+                st.info("📭 Cash iib ah kuma jirto mudadan.")
+            else:
+                rev   = cash_df["total"].sum()
+                prof  = cash_df["item_profit"].sum() if "item_profit" in cash_df.columns else 0
+                n_cust = cash_df["customer_name"].nunique()
+
+                m1, m2, m3 = st.columns(3)
+                with m1: st.markdown(safe_metric("💰 Cash Revenue", f"${rev:,.2f}", "metric-green"), unsafe_allow_html=True)
+                with m2: st.markdown(safe_metric("📈 Net Profit",   f"${prof:,.2f}", "metric-green"), unsafe_allow_html=True)
+                with m3: st.markdown(safe_metric("👥 Customers",    f"{n_cust}",     "metric-gold"),  unsafe_allow_html=True)
+
+                st.divider()
+                st.caption("👇 Gujiso macaamilka si aad u aragto faahfaahinta maalin maalin ah")
+                qb_customer_list(cash_df, "customer_name", "total", section_key="cash")
+
+    # ========================================================================
+    # PAGE: DAAWO — INVOICE SALES
+    # ========================================================================
+    elif menu == "🧾 Daawo: Invoice Sales":
+        st.markdown(f"## 🧾 Invoice Sales — *{time_filter}*")
+
+        if filtered_sales.empty or "status" not in filtered_sales.columns:
+            st.info("📭 Wax xog ah kuma jirto.")
+        else:
+            inv_df = filtered_sales[filtered_sales["status"] == "Invoice"].copy()
+            if inv_df.empty:
+                st.info("📭 Invoice iib ah kuma jirto mudadan.")
+            else:
+                # Merge payments to show balance
+                paid_map = {}
+                if not payments_df.empty:
+                    paid_map = payments_df.groupby("customer_name")["amount_paid"].sum().to_dict()
+
+                inv_total  = inv_df["total"].sum()
+                total_paid = sum(paid_map.get(c, 0) for c in inv_df["customer_name"].unique())
+                balance    = max(0, inv_total - total_paid)
+                n_cust     = inv_df["customer_name"].nunique()
+
+                m1, m2, m3, m4 = st.columns(4)
+                with m1: st.markdown(safe_metric("🧾 Invoice Total", f"${inv_total:,.2f}"),                        unsafe_allow_html=True)
+                with m2: st.markdown(safe_metric("✅ Lacag Bixiyey", f"${total_paid:,.2f}", "metric-green"),        unsafe_allow_html=True)
+                with m3: st.markdown(safe_metric("🔴 Balance Due",   f"${balance:,.2f}",    "metric-red"),           unsafe_allow_html=True)
+                with m4: st.markdown(safe_metric("👥 Customers",     f"{n_cust}",            "metric-gold"),          unsafe_allow_html=True)
+
+                st.divider()
+                st.caption("👇 Gujiso macaamilka si aad u aragto faahfaahinta maalin maalin ah")
+                qb_customer_list(inv_df, "customer_name", "total", section_key="inv")
+
+    # ========================================================================
+    # PAGE: DAAWO — URUURIS
+    # ========================================================================
+    elif menu == "📦 Daawo: Uruuris":
+        st.markdown(f"## 📦 Uruuris Sales — *{time_filter}*")
+
+        uur_view_df = pd.DataFrame()
+        if not filtered_sales.empty and "sale_type" in filtered_sales.columns:
+            uur_view_df = filtered_sales[filtered_sales["sale_type"] == "Uruuris"].copy()
+
+        if uur_view_df.empty:
+            st.info("📭 Wax iib Uruuris ah kuma jirto mudadan.")
+        else:
+            rev    = uur_view_df["total"].sum()
+            n_inv  = uur_view_df["invoice_number"].nunique() if "invoice_number" in uur_view_df.columns else 0
+            n_cust = uur_view_df["customer_name"].nunique()
+
+            m1, m2, m3 = st.columns(3)
+            with m1: st.markdown(safe_metric("💰 Wadarta Dakhliga", f"${rev:,.2f}", "metric-green"), unsafe_allow_html=True)
+            with m2: st.markdown(safe_metric("📄 Boonooyin",        f"{n_inv}",      "metric-gold"),  unsafe_allow_html=True)
+            with m3: st.markdown(safe_metric("👥 Uruurisyada",      f"{n_cust}",     "metric-gold"),  unsafe_allow_html=True)
+
+            st.divider()
+            st.caption("👇 Gujiso uruuriska si aad u aragto alaabihii maalin maalin ah")
+
+            # Group by invoice_number + customer_name as the "customer" unit
+            if "invoice_number" in uur_view_df.columns:
+                uur_view_df["uur_label"] = (
+                    uur_view_df["invoice_number"].fillna("—").astype(str)
+                    + "  ·  "
+                    + uur_view_df["customer_name"]
+                )
+                qb_customer_list(uur_view_df, "uur_label", "total", section_key="uur")
+            else:
+                qb_customer_list(uur_view_df, "customer_name", "total", section_key="uur")
+
+    # ========================================================================
+    # PAGE: DAAWO — PAYMENTS
+    # ========================================================================
+    elif menu == "💳 Daawo: Payments":
+        st.markdown(f"## 💳 Payments — *{time_filter}*")
+
+        pay_view = filter_by_period(payments_df, time_filter) if not payments_df.empty else pd.DataFrame()
+
+        if pay_view.empty:
+            st.info("📭 Wax lacag bixin ah kuma jirto mudadan.")
+        else:
+            tot_paid  = pay_view["amount_paid"].sum()
+            n_cust    = pay_view["customer_name"].nunique()
+            n_txn     = len(pay_view)
+
+            m1, m2, m3 = st.columns(3)
+            with m1: st.markdown(safe_metric("✅ Lacag La Helay",  f"${tot_paid:,.2f}", "metric-green"), unsafe_allow_html=True)
+            with m2: st.markdown(safe_metric("👥 Macaamiisha",     f"{n_cust}",          "metric-gold"),  unsafe_allow_html=True)
+            with m3: st.markdown(safe_metric("🧾 Transactions",    f"{n_txn}",            "metric-gold"),  unsafe_allow_html=True)
+
+            st.divider()
+            st.caption("👇 Gujiso macaamilka si aad u aragto lacag bixintii maalin maalin ah")
+
+            # Payments drill-down (reuse helper with amount_paid as total col)
+            pay_view2 = pay_view.copy()
+            if "date" in pay_view2.columns:
+                pay_view2["date"] = pd.to_datetime(pay_view2["date"], errors="coerce")
+
+            # Custom expander (payments have different columns)
+            cust_totals = (
+                pay_view2.groupby("customer_name")["amount_paid"]
+                .sum().reset_index()
+                .sort_values("amount_paid", ascending=False)
+            )
+
+            for _, crow in cust_totals.iterrows():
+                cust     = crow["customer_name"]
+                cust_tot = crow["amount_paid"]
+                cdf      = pay_view2[pay_view2["customer_name"] == cust].copy()
+                n_rows   = len(cdf)
+
+                with st.expander(
+                    f"👤  **{cust}**　　　🧾 {n_rows} payment{'s' if n_rows>1 else ''}"
+                    f"　　　✅ **${cust_tot:,.2f}**",
+                    expanded=False
+                ):
+                    dates = sorted(cdf["date"].dt.date.unique(), reverse=True)
+                    for d in dates:
+                        day_df = cdf[cdf["date"].dt.date == d].copy()
+                        day_df["date"] = day_df["date"].dt.strftime("%Y-%m-%d")
+                        day_tot = day_df["amount_paid"].sum()
+
+                        st.markdown(f"""
+                        <div style='background:#071428;border-left:3px solid #43a047;
+                                    border-radius:0 6px 6px 0;padding:0.4rem 1rem;
+                                    margin:0.6rem 0 0.3rem 0;display:flex;
+                                    justify-content:space-between;align-items:center;'>
+                            <span style='color:#90caf9;font-weight:600;font-size:0.9rem;'>
+                                📅 {d.strftime("%A, %d %B %Y")}
+                            </span>
+                            <span style='color:#69f0ae;font-family:monospace;font-size:0.85rem;'>
+                                ✅ ${day_tot:,.2f}
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        show = [c for c in
+                            ["id","date","amount_paid","received_by","invoice_number"]
+                            if c in day_df.columns]
+                        st.dataframe(day_df[show].reset_index(drop=True),
+                                     use_container_width=True, hide_index=True)
+
+                    st.markdown(f"""
+                    <div style='background:#0a1e35;border:1px solid #1e3050;border-radius:6px;
+                                padding:0.5rem 1rem;margin-top:0.5rem;'>
+                        <span style='color:#7090b8;font-size:0.82rem;'>
+                            Wadarta Lacagta La Helay:
+                            <b style='color:#69f0ae;'>${cust_tot:,.2f}</b>
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+    # ========================================================================
+    # PAGE: LACAGAHA MAQAN (ACCOUNTS RECEIVABLE)
+    # ========================================================================
+    elif menu == "🔴 Lacagaha Maqan":
+        st.markdown(f"## 🔴 Lacagaha Maqan — Accounts Receivable")
+        st.caption("Macaamiisha leh deyn furan oo aan lacagta wali bixin")
+
+        if sales_df.empty:
+            st.info("📭 Wax xog ah kuma jirto.")
+        else:
+            # All invoice sales (not filtered by period — show all outstanding)
+            inv_all = sales_df[sales_df["status"] == "Invoice"].copy() if "status" in sales_df.columns else pd.DataFrame()
+
+            if inv_all.empty:
+                st.success("✅ Wax deyn furan ah kuma jirto nidaamka!")
+            else:
+                # Build per-customer balance
+                inv_summary = inv_all.groupby("customer_name")["total"].sum().reset_index()
+                inv_summary.columns = ["customer_name", "Invoice_Total"]
+
+                if not payments_df.empty:
+                    pay_sum = payments_df.groupby("customer_name")["amount_paid"].sum().reset_index()
+                    pay_sum.columns = ["customer_name", "Total_Paid"]
+                    inv_summary = inv_summary.merge(pay_sum, on="customer_name", how="left")
+                    inv_summary["Total_Paid"] = inv_summary["Total_Paid"].fillna(0)
+                else:
+                    inv_summary["Total_Paid"] = 0
+
+                inv_summary["Balance_Due"] = (
+                    inv_summary["Invoice_Total"] - inv_summary["Total_Paid"]
+                ).clip(lower=0)
+
+                # Only customers with outstanding balance
+                ar_df = inv_summary[inv_summary["Balance_Due"] > 0].sort_values(
+                    "Balance_Due", ascending=False
+                )
+
+                if ar_df.empty:
+                    st.success("✅ Dhamaan macaamiisha ayaa lacagtooda bixiyey!")
+                else:
+                    total_ar   = ar_df["Balance_Due"].sum()
+                    total_inv  = ar_df["Invoice_Total"].sum()
+                    total_paid = ar_df["Total_Paid"].sum()
+                    n_cust     = len(ar_df)
+
+                    m1, m2, m3, m4 = st.columns(4)
+                    with m1: st.markdown(safe_metric("🔴 Wadarta Deynta",  f"${total_ar:,.2f}",   "metric-red"),   unsafe_allow_html=True)
+                    with m2: st.markdown(safe_metric("🧾 Invoice Guud",    f"${total_inv:,.2f}"),                   unsafe_allow_html=True)
+                    with m3: st.markdown(safe_metric("✅ La Bixiyey",      f"${total_paid:,.2f}", "metric-green"),  unsafe_allow_html=True)
+                    with m4: st.markdown(safe_metric("👥 Macaamiisha",     f"{n_cust}",            "metric-gold"),   unsafe_allow_html=True)
+
+                    st.divider()
+                    st.caption("👇 Gujiso macaamilka si aad u aragto alaabihii deynta ku ah — loo uruuriyey maalin maalin ah")
+
+                    for _, arow in ar_df.iterrows():
+                        cust      = arow["customer_name"]
+                        bal       = arow["Balance_Due"]
+                        inv_tot   = arow["Invoice_Total"]
+                        paid_tot  = arow["Total_Paid"]
+
+                        # Severity color
+                        if bal > 1000:
+                            sev_color = "#ff5252"
+                            sev_icon  = "🔴"
+                        elif bal > 300:
+                            sev_color = "#ffca28"
+                            sev_icon  = "🟡"
+                        else:
+                            sev_color = "#ff8a65"
+                            sev_icon  = "🟠"
+
+                        with st.expander(
+                            f"{sev_icon}  **{cust}**"
+                            f"　　　Invoice: ${inv_tot:,.2f}"
+                            f"　　　La Bixiyey: ${paid_tot:,.2f}"
+                            f"　　　**Balance Due: ${bal:,.2f}**",
+                            expanded=False
+                        ):
+                            cust_inv_df = inv_all[inv_all["customer_name"] == cust].copy()
+                            cust_inv_df["date"] = pd.to_datetime(
+                                cust_inv_df["date"], errors="coerce"
+                            )
+                            dates = sorted(
+                                cust_inv_df["date"].dt.date.unique(), reverse=True
+                            )
+
+                            for d in dates:
+                                day_df = cust_inv_df[
+                                    cust_inv_df["date"].dt.date == d
+                                ].copy()
+                                day_df["date"] = day_df["date"].dt.strftime("%Y-%m-%d")
+                                day_tot = day_df["total"].sum()
+
+                                st.markdown(f"""
+                                <div style='background:#1a0808;border-left:3px solid {sev_color};
+                                            border-radius:0 6px 6px 0;padding:0.4rem 1rem;
+                                            margin:0.6rem 0 0.3rem 0;display:flex;
+                                            justify-content:space-between;align-items:center;'>
+                                    <span style='color:#90caf9;font-weight:600;font-size:0.9rem;'>
+                                        📅 {d.strftime("%A, %d %B %Y")}
+                                    </span>
+                                    <span style='color:{sev_color};font-family:monospace;font-size:0.85rem;'>
+                                        🔴 ${day_tot:,.2f}
+                                    </span>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                                show = [c for c in
+                                    ["id","date","item_name","quantity",
+                                     "price","discount","total","invoice_number"]
+                                    if c in day_df.columns]
+                                st.dataframe(
+                                    day_df[show].reset_index(drop=True),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+
+                            # Payment history for this customer
+                            if not payments_df.empty:
+                                cust_pays = payments_df[
+                                    payments_df["customer_name"] == cust
+                                ].copy()
+                                if not cust_pays.empty:
+                                    cust_pays["date"] = pd.to_datetime(
+                                        cust_pays["date"], errors="coerce"
+                                    ).dt.strftime("%Y-%m-%d")
+                                    st.markdown("##### ✅ Lacag Bixintii")
+                                    pay_show = [c for c in
+                                        ["id","date","amount_paid",
+                                         "received_by","invoice_number"]
+                                        if c in cust_pays.columns]
+                                    st.dataframe(
+                                        cust_pays[pay_show].reset_index(drop=True),
+                                        use_container_width=True,
+                                        hide_index=True,
+                                    )
+
+                            # Balance footer
+                            st.markdown(f"""
+                            <div style='background:#1a0808;border:1px solid {sev_color};
+                                        border-radius:6px;padding:0.6rem 1.2rem;
+                                        margin-top:0.6rem;display:flex;gap:3rem;'>
+                                <span style='color:#7090b8;font-size:0.82rem;'>
+                                    Invoice Total: <b style='color:#e8f0ff;'>${inv_tot:,.2f}</b>
+                                </span>
+                                <span style='color:#7090b8;font-size:0.82rem;'>
+                                    La Bixiyey: <b style='color:#69f0ae;'>${paid_tot:,.2f}</b>
+                                </span>
+                                <span style='color:#7090b8;font-size:0.82rem;'>
+                                    Balance Due: <b style='color:{sev_color};'>${bal:,.2f}</b>
+                                </span>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+    # ========================================================================
+    # PAGE: CUSTOMER ANALYTICS ⭐ NEW
     # ========================================================================
     elif menu == "👥 Customer Analytics":
         st.markdown(f"## 👥 Customer Analytics — *{time_filter}*")
@@ -689,6 +1449,7 @@ if check_password():
         if filtered_sales.empty:
             st.info("📭 Wax xog ah kuma jirto waqtigan.")
         else:
+            # Build customer summary
             cust_summary = filtered_sales.groupby("customer_name").agg(
                 Total_Revenue=("total", "sum"),
                 Total_Profit=("item_profit", "sum"),
@@ -696,6 +1457,7 @@ if check_password():
                 Total_Qty=("quantity", "sum"),
             ).reset_index()
 
+            # Merge payments
             if not payments_df.empty:
                 pay_summary = payments_df.groupby("customer_name")["amount_paid"].sum().reset_index()
                 pay_summary.columns = ["customer_name", "Total_Paid"]
@@ -800,12 +1562,12 @@ if check_password():
                     cust_sales_disp = cust_sales.copy()
                     cust_sales_disp["date"] = cust_sales_disp["date"].dt.strftime("%Y-%m-%d")
                     st.dataframe(
-                        cust_sales_disp[["date","item_name","quantity","price","discount","total","status","sale_type"]].sort_values("date", ascending=False),
+                        cust_sales_disp[["date","item_name","quantity","price","discount","total","status"]].sort_values("date", ascending=False),
                         use_container_width=True, hide_index=True
                     )
 
     # ========================================================================
-    # PAGE: PRODUCT ANALYTICS
+    # PAGE: PRODUCT ANALYTICS ⭐ NEW
     # ========================================================================
     elif menu == "📦 Product Analytics":
         st.markdown(f"## 📦 Product Analytics — *{time_filter}*")
@@ -888,7 +1650,7 @@ if check_password():
                 st.dataframe(display_prod, use_container_width=True, hide_index=True)
 
     # ========================================================================
-    # PAGE: TIME ANALYTICS
+    # PAGE: TIME ANALYTICS ⭐ NEW
     # ========================================================================
     elif menu == "📈 Time Analytics":
         st.markdown("## 📈 Time-Based Sales Analytics")
@@ -941,6 +1703,7 @@ if check_password():
                 fig = build_time_chart(grp, "Monthly Sales Performance", "Month")
                 st.plotly_chart(fig, use_container_width=True)
 
+                # Month-over-month growth
                 if len(grp) >= 2:
                     grp["Revenue_Growth"] = grp["Revenue"].pct_change() * 100
                     st.markdown("#### 📊 Month-over-Month Growth")
@@ -1052,7 +1815,7 @@ if check_password():
             st.dataframe(cust_pl, use_container_width=True, hide_index=True)
 
     # ========================================================================
-    # PAGE: REPORTS & EXPORT
+    # PAGE: REPORTS & EXPORT ⭐ NEW
     # ========================================================================
     elif menu == "📋 Reports & Export":
         st.markdown("## 📋 Reports & Export")
@@ -1087,7 +1850,7 @@ if check_password():
                     with col:
                         st.markdown(safe_metric(k, v), unsafe_allow_html=True)
                 st.markdown("#### Transaction Details")
-                st.dataframe(df_report[["id","date","customer_name","item_name","quantity","price","discount","total","status","sale_type"]], use_container_width=True, hide_index=True)
+                st.dataframe(df_report[["id","date","customer_name","item_name","quantity","price","discount","total","status"]], use_container_width=True, hide_index=True)
                 st.markdown('</div>', unsafe_allow_html=True)
                 excel_data = to_excel_bytes(df_report)
                 st.download_button("📥 Export to Excel", data=excel_data,
@@ -1210,7 +1973,7 @@ if check_password():
             options_id = sorted(sales_df["id"].tolist(), reverse=True)
             selected_id = st.selectbox("🎯 Dooro ID-ga:", options_id)
             row_data = sales_df[sales_df["id"] == selected_id].iloc[0]
-            st.markdown(f"**Customer:** {row_data['customer_name']} &nbsp;|&nbsp; **Item:** {row_data['item_name']} &nbsp;|&nbsp; **Type:** {row_data.get('sale_type', 'Iib Caadi ah')}")
+            st.markdown(f"**Customer:** {row_data['customer_name']} &nbsp;|&nbsp; **Item:** {row_data['item_name']}")
 
             col_e1, col_e2, col_e3 = st.columns(3)
             with col_e1: edit_qty = st.number_input("Quantity", min_value=1, value=int(row_data["quantity"]))
@@ -1223,31 +1986,23 @@ if check_password():
                     new_total = (edit_qty * edit_price) - edit_disc
                     conn = get_db_connection()
                     if conn:
-                        try:
-                            with conn.cursor() as cur:
-                                cur.execute("""
-                                    UPDATE sql_tico_sales
-                                    SET quantity=%s, price=%s, discount=%s, total=%s
-                                    WHERE id=%s;
-                                """, (edit_qty, edit_price, edit_disc, new_total, int(selected_id)))
-                            conn.commit()
-                            st.success(f"✅ ID {selected_id} si guul leh ayaa loo cusboonaysiiyey!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Khalad: {e}")
-                        finally:
-                            conn.close()
+                        with conn.cursor() as cur:
+                            cur.execute("""
+                                UPDATE sql_tico_sales
+                                SET quantity=%s, price=%s, discount=%s, total=%s
+                                WHERE id=%s;
+                            """, (edit_qty, edit_price, edit_disc, new_total, int(selected_id)))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"✅ ID {selected_id} si guul leh ayaa loo cusboonaysiiyey!")
+                        st.rerun()
             with col_btn2:
                 if st.button("❌ Delete from SQL", use_container_width=True):
                     conn = get_db_connection()
                     if conn:
-                        try:
-                            with conn.cursor() as cur:
-                                cur.execute("DELETE FROM sql_tico_sales WHERE id=%s;", (int(selected_id),))
-                            conn.commit()
-                            st.error(f"🗑️ ID {selected_id} waa la tirtiray!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Khalad: {e}")
-                        finally:
-                            conn.close()
+                        with conn.cursor() as cur:
+                            cur.execute("DELETE FROM sql_tico_sales WHERE id=%s;", (int(selected_id),))
+                        conn.commit()
+                        conn.close()
+                        st.error(f"🗑️ ID {selected_id} waa la tirtiray!")
+                        st.rerun()
